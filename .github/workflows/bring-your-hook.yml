@@ -1,0 +1,71 @@
+# Copy-paste CI for bring-your-hook adopters (build spec section 5).
+# Runs in your fork as-is; if your suite lives somewhere other than
+# test/bring-your-hook/, change BYOH_MATCH_PATH and BYOH_SEARCH_DIR
+# (both point at the same subtree, just spelled the two ways forge
+# needs) and nothing else. Mirrors ci.yml: the three green-local/red-CI
+# splits (exact solc 0.8.26, cancun, recursive submodules) are pinned
+# in-repo, and solc is cached so CI cannot drift.
+#
+# The two leg scripts (ci/clean_leg.sh, ci/planted_leg.sh) are shared
+# with ci.yml, take an optional path arg to scope discovery, and are
+# self-contained in the fork you're copying, so this workflow stays
+# copy-paste with no external dependencies.
+#
+# Two legs, separately named and separately clickable:
+#   your-hook-clean-passes    your hook's suites pass, zero markers
+#   your-planted-mutation-fails  OPTIONAL red leg: any suite you name
+#     with the `Planted` contract suffix must FAIL with an
+#     `INVARIANT VIOLATED <name>` marker (inverted assertion, so the
+#     job is green exactly when your seeded mutation is caught).
+#     With no Planted suite in the path, the leg passes vacuously.
+name: bring-your-hook
+
+on:
+  push:
+  pull_request:
+
+env:
+  # forge --match-path glob (clean leg): trailing /* matches every file
+  # under the subtree.
+  BYOH_MATCH_PATH: "test/bring-your-hook/*"
+  # Directory root (planted leg): the same subtree without the glob.
+  BYOH_SEARCH_DIR: "test/bring-your-hook/"
+
+jobs:
+  your-hook-clean-passes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - name: Cache solc 0.8.26
+        uses: actions/cache@v4
+        with:
+          path: ~/.svm
+          key: solc-0.8.26-${{ runner.os }}
+      - name: Build
+        run: forge build
+      - name: Your hook passes, zero markers
+        run: ./ci/clean_leg.sh "$BYOH_MATCH_PATH"
+
+  your-planted-mutation-fails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - name: Cache solc 0.8.26
+        uses: actions/cache@v4
+        with:
+          path: ~/.svm
+          key: solc-0.8.26-${{ runner.os }}
+      - name: Build
+        run: forge build
+      - name: Planted suites fail with markers (inverted assertion)
+        run: ./ci/planted_leg.sh "$BYOH_SEARCH_DIR"

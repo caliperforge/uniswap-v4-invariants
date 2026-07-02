@@ -1,0 +1,147 @@
+uniswap-v4-invariants
+Copyright 2026 CaliperForge / Michael Moffett.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may
+not use this work except in compliance with the License. You may obtain
+a copy of the License at http://www.apache.org/licenses/LICENSE-2.0.
+
+This NOTICE file is provided for compliance with Section 4(d) of the
+Apache License, and to record third-party components with different
+licenses.
+
+========================================================================
+This project's own code
+========================================================================
+
+The Apache-2.0 license above covers THIS repository's own code: the
+hook cases under `src/cases/`, the InvariantRouter under
+`src/routers/`, the test harness under `test/`, and all documentation.
+It does NOT cover the vendored upstream work described below.
+
+========================================================================
+THIRD-PARTY COMPONENT: Uniswap V4 Core
+========================================================================
+
+This repository vendors Uniswap V4 Core as a pinned Git submodule at
+`lib/v4-core`:
+  URL:         https://github.com/Uniswap/v4-core
+  Tag:         v4.0.0
+  Commit:      e50237c43811bd9b526eff40f26772152a42daba
+  Placement:   `lib/v4-core` (submodule pointer; this repository does
+               not redistribute v4-core source directly)
+
+Uniswap V4 Core is NOT Apache-2.0. It is per-file dual-licensed by
+Universal Navigation Inc. Each file in `lib/v4-core` states its
+applicable license in its `// SPDX-License-Identifier` header. The two
+licenses in use are:
+
+  1. BUSINESS SOURCE LICENSE 1.1 (BUSL-1.1)
+     Licensor:       Universal Navigation Inc.
+     Licensed Work:  Uniswap V4 Core (c) 2023 Universal Navigation Inc.
+     Change Date:    the earlier of 2027-06-15 or a date specified at
+                     v4-core-license-date.uniswap.eth
+     Change License: MIT License
+     Additional Use Grant: any uses listed at
+                     v4-core-license-grants.uniswap.eth
+     Full license text: `lib/v4-core/licenses/BUSL_LICENSE`
+
+     Files under BUSL-1.1 in this submodule (full enumeration at the
+     pinned commit):
+       lib/v4-core/src/PoolManager.sol
+       lib/v4-core/src/libraries/Pool.sol
+       lib/v4-core/src/libraries/Position.sol
+       lib/v4-core/src/libraries/Lock.sol
+       lib/v4-core/src/libraries/NonzeroDeltaCount.sol
+       lib/v4-core/src/libraries/CurrencyReserves.sol
+       lib/v4-core/src/libraries/CurrencyDelta.sol
+       lib/v4-core/src/test/ProxyPoolManager.sol   (NOT imported by
+                                                    this harness)
+
+     This project uses Uniswap V4 Core solely in a non-production
+     pre-deployment CI test harness. No production deployment is
+     made. This use is within the non-production use and
+     redistribution grants of the Business Source License 1.1.
+
+  2. MIT LICENSE
+     Copyright 2023 Universal Navigation Inc.
+     Full license text: `lib/v4-core/licenses/MIT_LICENSE`
+
+     Files under the MIT License at the pinned commit total 39, and
+     include (non-exhaustive; each carries its own MIT SPDX header):
+       lib/v4-core/src/libraries/Hooks.sol
+       lib/v4-core/src/interfaces/IHooks.sol
+       lib/v4-core/src/interfaces/IPoolManager.sol
+       (and the remaining library, interface, and type files as
+        marked in their individual SPDX-License-Identifier headers)
+
+     The MIT License requires that the above copyright notice and the
+     permission notice (in `lib/v4-core/licenses/MIT_LICENSE`) be
+     included in all copies or substantial portions of the
+     MIT-licensed software. Those notices are preserved in the
+     submodule's license file. This repository imports MIT-licensed
+     v4-core files by Foundry remapping; it does not copy them into
+     its own source tree.
+
+  NOTE 1 (submodule contents NOT imported by this harness). Files
+  under `lib/v4-core/src/test/` (35 files) carry
+  SPDX-License-Identifier: UNLICENSED, and one file
+  (`lib/v4-core/src/test/NativeERC20.sol`) carries
+  SPDX-License-Identifier: GPL-3.0-or-later. This project does NOT
+  import, use, or redistribute any of these files. A project-authored
+  test router (`src/routers/InvariantRouter.sol`, Apache-2.0) is used
+  in their place. `forge-std`'s test ERC20 helpers (MIT + Apache-2.0)
+  replace `NativeERC20` wherever a test-only ERC20 helper is needed.
+
+  NOTE 2 (nested submodule). Uniswap V4 Core recursively references
+  `solmate` (AGPL-3.0-only) at `lib/v4-core/lib/solmate`; the file is
+  present on disk after `git submodule update --init --recursive`
+  because v4-core's own sources import it. NO file in this
+  repository imports `solmate` (verified by build-time remapping
+  discipline; the repo's own source files import v4-core only).
+
+========================================================================
+TRANSITIVE SUBMODULE DEPENDENCIES (via lib/v4-core)
+========================================================================
+
+The following are transitive dependencies fetched as nested submodules
+of `lib/v4-core`. They are included on disk only to enable compilation
+of v4-core itself; this repository's own source files do not import
+them.
+
+  forge-std (`lib/v4-core/lib/forge-std`)
+    License: MIT + Apache-2.0 dual
+    https://github.com/foundry-rs/forge-std
+
+  openzeppelin-contracts (`lib/v4-core/lib/openzeppelin-contracts`)
+    License: MIT
+    Copyright (c) 2016-2024 OpenZeppelin
+    https://github.com/OpenZeppelin/openzeppelin-contracts
+
+  solmate (`lib/v4-core/lib/solmate`) - AGPL-3.0-only
+    This project does NOT import or redistribute solmate. It is a
+    transitive submodule dependency of v4-core used for v4-core's own
+    internal tests only. Do NOT import from
+    `lib/v4-core/lib/solmate` in this project's source files.
+
+========================================================================
+Direct top-level dependencies
+========================================================================
+
+  forge-std (`lib/forge-std`, v1.9.4)
+    License: MIT + Apache-2.0 dual
+    https://github.com/foundry-rs/forge-std
+    Test ERC20 tokens in this harness derive from forge-std's helpers.
+
+========================================================================
+Toolchain authors
+========================================================================
+
+  Foundry (forge, cast, anvil): foundry-rs.
+
+========================================================================
+Related CaliperForge harnesses
+========================================================================
+
+  invariant-atlas: cross-VM exploit-to-invariant case set that
+  established the same-source clean/planted twin discipline this
+  repository applies to the real Uniswap v4 core surface. Apache-2.0.
