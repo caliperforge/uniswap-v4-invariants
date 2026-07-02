@@ -1,0 +1,49 @@
+# Both-leg CI (build spec §8): every push/PR proves the clean twins
+# pass AND the planted twins fail with INVARIANT VIOLATED markers.
+# The three green-local/red-CI splits (exact solc 0.8.26, cancun,
+# recursive submodules) are all pinned in-repo; solc is cached so CI
+# cannot drift.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  clean-passes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - name: Cache solc 0.8.26
+        uses: actions/cache@v4
+        with:
+          path: ~/.svm
+          key: solc-0.8.26-${{ runner.os }}
+      - name: Build
+        run: forge build
+      - name: Clean twins pass, zero markers
+        run: ./ci/clean_leg.sh
+
+  planted-bug-twin-fails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - name: Cache solc 0.8.26
+        uses: actions/cache@v4
+        with:
+          path: ~/.svm
+          key: solc-0.8.26-${{ runner.os }}
+      - name: Build
+        run: forge build
+      - name: Planted twins fail with markers (inverted assertion)
+        run: ./ci/planted_leg.sh
