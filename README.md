@@ -1,5 +1,8 @@
 # uniswap-v4-invariants
 
+[![ci](https://github.com/caliperforge/uniswap-v4-invariants/actions/workflows/ci.yml/badge.svg)](https://github.com/caliperforge/uniswap-v4-invariants/actions/workflows/ci.yml)
+[![bring-your-hook](https://github.com/caliperforge/uniswap-v4-invariants/actions/workflows/bring-your-hook.yml/badge.svg)](https://github.com/caliperforge/uniswap-v4-invariants/actions/workflows/bring-your-hook.yml)
+
 Stateful invariant test harness for Uniswap v4 hooks, running against
 the real `v4-core` PoolManager (pinned submodule, no mocks, no forks).
 Four hook bug classes ship as same-source clean/planted twins: the
@@ -193,7 +196,7 @@ them.
   flag-encoded addresses via `deployCodeTo`.
 - `test/bring-your-hook/`: adoption scaffold. Inherit
   `BYOHInvariantBase`, point it at your hook, get the invariant walk.
-- `docs/coverage_map.md`, `docs/scorecards/`, `docs/pin_decision_v4-core.md`.
+- `docs/coverage_map.md`, `docs/scorecards/`, `docs/pin_decision_v4-core.md`, `docs/design_notes.md`.
 
 ## Toolchain
 
