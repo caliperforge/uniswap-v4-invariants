@@ -1,0 +1,55 @@
+Vendored copy of `OpenZeppelin/uniswap-hooks` at tag v1.1.0
+(https://github.com/OpenZeppelin/uniswap-hooks/releases/tag/v1.1.0,
+commit `e59fe72`; last audit-relevant delta at commit `2678eb9`).
+
+Files vendored under this directory:
+  * BaseDynamicAfterFee.sol   (src/fee/BaseDynamicAfterFee.sol)
+  * BaseHook.sol              (src/base/BaseHook.sol)
+  * CurrencySettler.sol       (src/utils/CurrencySettler.sol)
+  * IHookEvents.sol           (src/interfaces/IHookEvents.sol)
+
+License: MIT (see ./LICENSE and the copyright notices retained in each
+vendored .sol file).
+
+Why vendored:
+This case (`experiments/uniswap-v4-invariants/src/cases/p2-dynamicfee-
+direction-integrity`) subclasses OpenZeppelin's actual audited
+`BaseDynamicAfterFee` to teach the direction-blind fee-arithmetic bug
+that `2678eb9` remediated (the finding recorded as M-01 in the OZ
+Uniswap Hooks v1.1.0 RC 2 audit). The upstream `BaseDynamicAfterFee`
+imports `SwapParams` from `v4-core/src/types/PoolOperation.sol`, which
+does not exist in the v4-core tag `v4.0.0` this repository pins;
+bumping v4-core across the repository would touch every other case's
+compile path and violate the additive-only rail this build ships
+under. Vendoring the four files here (with `SwapParams` /
+`ModifyLiquidityParams` referenced as `IPoolManager.SwapParams` /
+`IPoolManager.ModifyLiquidityParams`, and internal sibling imports
+rewritten to `./` paths) lets the case's clean twin BE the audited
+fixed contract, byte-faithful in the fee-arithmetic block, while
+leaving the other five cases untouched.
+
+Patches applied to the vendored files (delta from upstream v1.1.0):
+  1. Internal `src/<subdir>/*.sol` imports rewritten to `./*.sol`
+     sibling imports (BaseHook, CurrencySettler, IHookEvents).
+  2. `import {SwapParams} from "v4-core/src/types/PoolOperation.sol";`
+     removed; `SwapParams` and `ModifyLiquidityParams` references in
+     function signatures rewritten to `IPoolManager.SwapParams` and
+     `IPoolManager.ModifyLiquidityParams` (identical struct fields in
+     v4-core `v4.0.0`, which pre-dates the PoolOperation.sol split).
+     No fee-arithmetic block was altered.
+  3. `openzeppelin/utils/*` and `openzeppelin/token/*` imports left
+     unchanged; the top-level foundry.toml carries a case-scoped
+     `openzeppelin/=` remapping into
+     `lib/openzeppelin-uniswap-hooks/lib/openzeppelin-contracts/contracts/`
+     so the same source paths resolve.
+
+The audited fee-arithmetic block on lines 155-174 of
+`BaseDynamicAfterFee.sol` (branching on `exactInput` and computing
+`feeAmount = unspecified - target` for exactInput vs
+`feeAmount = target - unspecified` for exactOutput) is copied
+character-for-character from the upstream v1.1.0 file.
+
+Reviewer check: a byte-level diff against
+`lib/openzeppelin-uniswap-hooks/src/fee/BaseDynamicAfterFee.sol` at
+tag `v1.1.0` will show the three patch classes listed above and
+nothing else in the fee-arithmetic block.
