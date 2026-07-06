@@ -130,7 +130,7 @@ at that size.
 
 ## Cases
 
-Five cases ship. Each is a clean/planted twin: the clean twin is what
+Six cases ship. Each is a clean/planted twin: the clean twin is what
 a hook author would write if they got the spec right, the planted twin
 is the same source with one single-hunk seeded specification violation
 in the flagged code path, and CI runs both legs. Twin diffs and per-run
@@ -144,6 +144,7 @@ case's own canonical name and marker.
 | **C-H3** [details](src/cases/h3-flash-accounting/README.md) | `FlashHook` | callback opens a currency delta on the `PoolManager` and does not `settle` it before the outer `unlock` returns | `INVARIANT VIOLATED h3_flash_accounting` | green | red with marker |
 | **C-B1** [details](src/cases/b1-custom-accounting/README.md) | `LiquidityVaultHook` | withdraw-path rounding direction flipped on the idle leg of a pro-rata split, so remainder-carrying withdrawals systematically overstate the split by 1 wei | `INVARIANT VIOLATED b1_balance_split_integrity` (plus `b1_accounting_conservation`) | green | red with marker |
 | **C-P1** [details](src/cases/p1-liquidity-penalty-conservation/README.md) | `LiquidityPenaltyHook` | add-event on an existing position (i.e. an increase) fails to capture the fees v4-core just auto-collected into the pending penalty base, so a removal inside the penalty window donates zero for that epoch | `INVARIANT VIOLATED p1_liquidity_penalty_conservation` | green | red with marker |
+| **C-P2** [details](src/cases/p2-dynamicfee-direction-integrity/README.md) | `DemoDynamicAfterFeeHook` (subclass of OZ's audited `BaseDynamicAfterFee` @ tag `v1.1.0`) | after-swap fee-arithmetic is the pre-`2678eb9` shape: `feeAmount = unspec - target` computed unconditionally without branching on `exactInput`, so on exactOutput swaps the fee is billed with the wrong sign convention and the accrued ledger diverges from the reference | `INVARIANT VIOLATED p2_dynamicfee_direction_integrity` | green | red with marker |
 
 Each case ships:
 
