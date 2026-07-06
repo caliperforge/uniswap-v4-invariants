@@ -130,7 +130,7 @@ at that size.
 
 ## Cases
 
-Four cases ship. Each is a clean/planted twin: the clean twin is what
+Five cases ship. Each is a clean/planted twin: the clean twin is what
 a hook author would write if they got the spec right, the planted twin
 is the same source with one single-hunk seeded specification violation
 in the flagged code path, and CI runs both legs. Twin diffs and per-run
@@ -143,6 +143,7 @@ case's own canonical name and marker.
 | **C-H2** [details](src/cases/h2-fee-waiver/README.md) | `FeeSwitchHook` | fee-waiver decision honored from a byte of caller-supplied `hookData` instead of an on-chain allowlist | `INVARIANT VIOLATED h2_fee_waiver_via_hookdata` | green | red with marker |
 | **C-H3** [details](src/cases/h3-flash-accounting/README.md) | `FlashHook` | callback opens a currency delta on the `PoolManager` and does not `settle` it before the outer `unlock` returns | `INVARIANT VIOLATED h3_flash_accounting` | green | red with marker |
 | **C-B1** [details](src/cases/b1-custom-accounting/README.md) | `LiquidityVaultHook` | withdraw-path rounding direction flipped on the idle leg of a pro-rata split, so remainder-carrying withdrawals systematically overstate the split by 1 wei | `INVARIANT VIOLATED b1_balance_split_integrity` (plus `b1_accounting_conservation`) | green | red with marker |
+| **C-P1** [details](src/cases/p1-liquidity-penalty-conservation/README.md) | `LiquidityPenaltyHook` | add-event on an existing position (i.e. an increase) fails to capture the fees v4-core just auto-collected into the pending penalty base, so a removal inside the penalty window donates zero for that epoch | `INVARIANT VIOLATED p1_liquidity_penalty_conservation` | green | red with marker |
 
 Each case ships:
 
@@ -166,6 +167,18 @@ hook team can prove their suite catches the class before deploying.
 This repo does not claim its own suite would have found Bunni ahead
 of time; the B1 case is a regression fixture for the class, not a
 reproduction of the incident.
+
+**Motivation note for P1, cited once.** The class the P1 fixture
+encodes (add-time fee-state guard on a liquidity-penalty hook) was
+drawn from Zealynx's public v4-hook pattern write-up (2026-05-25), with
+the root finding first surfaced in OpenZeppelin's own Uniswap Hooks
+v1.1.0 audit; the current published `LiquidityPenaltyHook` (v1.2.0,
+under `OpenZeppelin/uniswap-hooks/src/general/`) carries the guard.
+The P1 fixture is a defender-side regression on a synthetic teaching-
+scale hook so a future penalty-donation hook team can prove their
+suite catches the class before deploying. This repo does not
+reproduce the class as a mechanism against any specific deployment;
+the case is a class-level regression fixture.
 
 ## Bring your hook
 
