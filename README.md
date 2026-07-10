@@ -130,6 +130,18 @@ at that size.
 
 ## Cases
 
+Every case here is a same-source clean/planted twin built on an
+already-public source of truth (an audit finding shipped with a fix,
+a hook team's own public postmortem, or the Uniswap protocol spec
+itself), credited to the party whose public work carries that source
+of truth. Where an audit firm carries the finding, the credit names
+the firm; where the class-source is the protocol spec itself or a
+hook team's own postmortem, the credit names that party. Rows without
+an external audit-firm precedent at the pinned commit say so; each
+case README carries the deeper report URLs, fix-commit hashes, and
+version tags, and `docs/coverage_map.md` carries the file-level
+comparator citations.
+
 Six cases ship. Each is a clean/planted twin: the clean twin is what
 a hook author would write if they got the spec right, the planted twin
 is the same source with one single-hunk seeded specification violation
@@ -137,14 +149,14 @@ in the flagged code path, and CI runs both legs. Twin diffs and per-run
 receipts live in each case README; the summary rows below use each
 case's own canonical name and marker.
 
-| Case | Hook | Seeded specification violation | Invariant marker | Clean leg | Planted leg |
-|---|---|---|---|---|---|
-| **C-H1** [details](src/cases/h1-hookdata-identity/README.md) | `RewardsHook` | reward-recipient identity read from caller-supplied `hookData` instead of the authenticated sender | `INVARIANT VIOLATED h1_rewards_identity` | green | red with marker |
-| **C-H2** [details](src/cases/h2-fee-waiver/README.md) | `FeeSwitchHook` | fee-waiver decision honored from a byte of caller-supplied `hookData` instead of an on-chain allowlist | `INVARIANT VIOLATED h2_fee_waiver_via_hookdata` | green | red with marker |
-| **C-H3** [details](src/cases/h3-flash-accounting/README.md) | `FlashHook` | callback opens a currency delta on the `PoolManager` and does not `settle` it before the outer `unlock` returns | `INVARIANT VIOLATED h3_flash_accounting` | green | red with marker |
-| **C-B1** [details](src/cases/b1-custom-accounting/README.md) | `LiquidityVaultHook` | withdraw-path rounding direction flipped on the idle leg of a pro-rata split, so remainder-carrying withdrawals systematically overstate the split by 1 wei | `INVARIANT VIOLATED b1_balance_split_integrity` (plus `b1_accounting_conservation`) | green | red with marker |
-| **C-P1** [details](src/cases/p1-liquidity-penalty-conservation/README.md) | `LiquidityPenaltyHook` | add-event on an existing position (i.e. an increase) fails to capture the fees v4-core just auto-collected into the pending penalty base, so a removal inside the penalty window donates zero for that epoch | `INVARIANT VIOLATED p1_liquidity_penalty_conservation` | green | red with marker |
-| **C-P2** [details](src/cases/p2-dynamicfee-direction-integrity/README.md) | `DemoDynamicAfterFeeHook` (subclass of OZ's audited `BaseDynamicAfterFee` @ tag `v1.1.0`) | after-swap fee-arithmetic is the pre-`2678eb9` shape: `feeAmount = unspec - target` computed unconditionally without branching on `exactInput`, so on exactOutput swaps the fee is billed with the wrong sign convention and the accrued ledger diverges from the reference | `INVARIANT VIOLATED p2_dynamicfee_direction_integrity` | green | red with marker |
+| Case | Hook | Seeded specification violation | Invariant marker | Credited to | Clean leg | Planted leg |
+|---|---|---|---|---|---|---|
+| **C-H1** [details](src/cases/h1-hookdata-identity/README.md) | `RewardsHook` | reward-recipient identity read from caller-supplied `hookData` instead of the authenticated sender | `INVARIANT VIOLATED h1_rewards_identity` | no external audit-firm precedent at pinned commit; class-source is Uniswap's own `IHooks` natspec at `lib/v4-core/src/interfaces/IHooks.sol` @ `e50237c` (v4.0.0), which defines `hookData` as caller-supplied. Hacken `test/suites/HookDataDetection.t.sol` @ `965be6006eab` covers partial introspection only (per `docs/coverage_map.md` §H1) | green | red with marker |
+| **C-H2** [details](src/cases/h2-fee-waiver/README.md) | `FeeSwitchHook` | fee-waiver decision honored from a byte of caller-supplied `hookData` instead of an on-chain allowlist | `INVARIANT VIOLATED h2_fee_waiver_via_hookdata` | no external audit-firm precedent at pinned commit; same class-source as C-H1 (Uniswap `IHooks` natspec). OpenZeppelin `src/fee/BaseOverrideFee.sol` @ `26dc8e53f812` reduces the boilerplate H2 surface by construction without closing the class (per `docs/coverage_map.md` §H2) | green | red with marker |
+| **C-H3** [details](src/cases/h3-flash-accounting/README.md) | `FlashHook` | callback opens a currency delta on the `PoolManager` and does not `settle` it before the outer `unlock` returns | `INVARIANT VIOLATED h3_flash_accounting` | Uniswap, whose own `PoolManager.sol` L111 @ `e50237c` reverts any unlock exit with a nonzero delta (`CurrencyNotSettled`); the case turns that mainnet revert into a pre-deploy CI failure. Partial adjacencies: OpenZeppelin `CurrencySettler.sol` + `BaseCustomAccounting.sol` settle/take patterns, and Hacken `test/deltas/{SwapDeltaEffects,LiquidityDeltaEffects}.t.sol` stateless delta checks (per `docs/coverage_map.md` §H3) | green | red with marker |
+| **C-B1** [details](src/cases/b1-custom-accounting/README.md) | `LiquidityVaultHook` | withdraw-path rounding direction flipped on the idle leg of a pro-rata split, so remainder-carrying withdrawals systematically overstate the split by 1 wei | `INVARIANT VIOLATED b1_balance_split_integrity` (plus `b1_accounting_conservation`) | Bunni team's own public postmortem (`blog.bunni.xyz/posts/exploit-post-mortem/`, September 2025, $8.3M) is the class-source of record. Taxonomy adjacency: Zealynx Pattern 4 (custom-accounting drift), whose public write-up (2026-05-25) uses Bunni V2 as the walkthrough. Partial mitigation: OpenZeppelin `BaseCustomAccounting.sol` @ `26dc8e53f812` reduces the boilerplate surface without closing the class (per `docs/coverage_map.md` §B1) | green | red with marker |
+| **C-P1** [details](src/cases/p1-liquidity-penalty-conservation/README.md) | `LiquidityPenaltyHook` | add-event on an existing position (i.e. an increase) fails to capture the fees v4-core just auto-collected into the pending penalty base, so a removal inside the penalty window donates zero for that epoch | `INVARIANT VIOLATED p1_liquidity_penalty_conservation` | **OpenZeppelin** (root finding: Uniswap Hooks v1.1.0 audit; guard shipped in `LiquidityPenaltyHook.sol` v1.2.0 under `OpenZeppelin/uniswap-hooks/src/general/`). **Zealynx** (public v4-hook write-up 2026-05-25, the taxonomy source) | green | red with marker |
+| **C-P2** [details](src/cases/p2-dynamicfee-direction-integrity/README.md) | `DemoDynamicAfterFeeHook` (subclass of OZ's audited `BaseDynamicAfterFee` @ tag `v1.1.0`) | after-swap fee-arithmetic is the pre-`2678eb9` shape: `feeAmount = unspec - target` computed unconditionally without branching on `exactInput`, so on exactOutput swaps the fee is billed with the wrong sign convention and the accrued ledger diverges from the reference | `INVARIANT VIOLATED p2_dynamicfee_direction_integrity` | **OpenZeppelin** (root finding: Uniswap Hooks v1.1.0 RC-2 audit finding M-01 "Incorrect Fee Application When `unspecifiedAmount` Represents Input Instead of Output"; fix commit `2678eb9`, released in tag `v1.1.0`). **Zealynx** (Pattern 4: custom-accounting drift, public write-up 2026-05-25) | green | red with marker |
 
 Each case ships:
 
@@ -180,6 +192,25 @@ scale hook so a future penalty-donation hook team can prove their
 suite catches the class before deploying. This repo does not
 reproduce the class as a mechanism against any specific deployment;
 the case is a class-level regression fixture.
+
+**Motivation note for P2, cited once.** The class the P2 fixture
+encodes (direction-aware fee arithmetic on the after-swap fee-basis
+path) was reported and fixed on OpenZeppelin's own `uniswap-hooks`
+library under OpenZeppelin's Uniswap Hooks v1.1.0 RC 2 audit as
+finding M-01 ("Incorrect Fee Application When `unspecifiedAmount`
+Represents Input Instead of Output"). The fix landed as commit
+`2678eb9` and released in tag `v1.1.0`; the case's clean twin
+subclasses the audited fixed `BaseDynamicAfterFee` (vendored under
+`src/cases/p2-dynamicfee-direction-integrity/vendor/oz-uniswap-hooks-v1.1.0/`)
+and byte-copies the post-fix fee-arithmetic; the planted twin
+byte-copies the pre-fix arithmetic into the same file at the same
+line. Zealynx's public v4-hook write-up (2026-05-25) carries Pattern 4
+(custom-accounting drift) as the umbrella taxonomy this class sits
+under. The P2 fixture is a defender-side regression on a teaching-
+scale synthetic hook so a future dynamic-fee hook team can prove
+their suite catches the class before deploying. This repo does not
+reproduce the finding against any specific deployed hook; the case
+is a class-level regression fixture.
 
 ## Bring your hook
 
