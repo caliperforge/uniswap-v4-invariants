@@ -47,3 +47,27 @@ jobs:
         run: forge build
       - name: Planted twins fail with markers (inverted assertion)
         run: ./ci/planted_leg.sh
+
+  reachability-multi-seed:
+    # Merge gate: N=16 distinct fuzz seeds must all fail every real
+    # planted-twin suite (bring-your-hook walkthrough excluded).
+    # Turns the base planted leg's one-seed catch into a deterministic
+    # N-of-N certification. No new case merges unless it certifies
+    # fail-on-all-N. See docs/reachability.md for the rule.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - name: Cache solc 0.8.26
+        uses: actions/cache@v4
+        with:
+          path: ~/.svm
+          key: solc-0.8.26-${{ runner.os }}
+      - name: Build
+        run: forge build
+      - name: Reachability certified across 16 seeds
+        run: ./ci/reachability_leg.sh
