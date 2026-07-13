@@ -168,6 +168,24 @@ Each case ships:
 - A scorecard under `docs/scorecards/` recording the exact `forge test`
   output on both legs.
 
+## Multi-seed reachability certification
+
+Every real case's planted suite is also certified on a fixed 16-seed
+set as a standing merge gate. Every seed must FAIL the planted suite
+with an `INVARIANT VIOLATED` marker; if any seed passes on any suite,
+CI turns red. The check runs as the third parallel job on every push
+and pull request (`.github/workflows/ci.yml` job `reachability-multi-seed`).
+
+Verdict from the local certification run on 2026-07-13, at the
+standing `foundry.toml [invariant]` budget of `runs = 256`, `depth = 50`:
+
+```
+reachability certified: yes (all suites, 16/16 failed as required)
+```
+
+Per-case k / 16 numbers, the seed list, and the merge-gate rule are in
+[`docs/reachability.md`](docs/reachability.md).
+
 **Motivation note for B1, cited once and not reproduced as a
 reproduction.** Rounding-direction defects in custom vault share
 accounting have been publicly documented as the cause of real-world
