@@ -5,6 +5,45 @@
 
 Stateful invariant test harness for Uniswap v4 hooks, running against
 the real `v4-core` PoolManager (pinned submodule, no mocks, no forks).
+
+## Quick start (one command)
+
+```sh
+git clone --recursive https://github.com/caliperforge/uniswap-v4-invariants
+cd uniswap-v4-invariants
+./caliper run
+```
+
+That runs the bundled reference planted twin and prints
+`INVARIANT VIOLATED byoh_example_afterSwap_count`. The wrapper exits `0`
+iff the marker fires. Wall-clock: under five minutes on a MacBook or a
+GitHub Actions `ubuntu-latest` runner. Requires `forge` on PATH; if it
+is missing, the wrapper prints the one install line and exits non-zero
+(no auto `curl | sh`). `just run` is a thin alias that delegates to the
+same script.
+
+Point it at your own hook:
+
+```sh
+./caliper run path/to/YourHook.sol
+```
+
+Adopter mode copies your hook under `src/adopters/caliper-run/`,
+generates a minimal `BYOHInvariantBase` wiring in
+`test/bring-your-hook/adopters/CaliperRun.t.sol`, runs the settlement-
+liveness leg on your hook (no revert, no unsettled delta, no wrong
+selector return, over the standard 256-runs x depth-50 fuzz walk), then
+runs the harness's own planted-case matrix so the marker mechanism is
+visible on the shipped twins. Default assumptions: zero constructor
+args, permissions `Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG`.
+Override via `CALIPER_HOOK_FLAGS_EXPR` and `CALIPER_HOOK_CTOR_ARGS_EXPR`.
+Hooks that do not fit these assumptions belong on the power-user path
+below.
+
+A 30-second silent screen-capture of the fresh-clone-to-marker flow
+at `docs/one-command-run.mp4` is recording pending; recording
+instructions and status are in `docs/one-command-recording.md`.
+
 Four hook bug classes ship as same-source clean/planted twins: the
 clean twin passes the invariant suite, the planted twin (a single-hunk
 mutation on the seeded specification violation) fails it with an
@@ -230,7 +269,12 @@ their suite catches the class before deploying. This repo does not
 reproduce the finding against any specific deployed hook; the case
 is a class-level regression fixture.
 
-## Bring your hook
+## Bring your hook (power-user path)
+
+The hand-authored adoption flow. Preferred over `./caliper run <hook>`
+when your hook has constructor args, non-default permissions, or
+business-logic properties you want to state (which is almost every
+hook).
 
 Walkthrough: `test/bring-your-hook/README.md`. Worked example:
 `test/bring-your-hook/ExampleAdopter.t.sol` (clean leg) and
