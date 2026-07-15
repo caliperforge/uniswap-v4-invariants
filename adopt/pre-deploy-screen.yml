@@ -1,0 +1,176 @@
+# Drop-in pre-deploy screen for a Uniswap v4 hook.
+#
+# What this is: a GitHub Actions workflow you copy verbatim into YOUR
+# hook repo at .github/workflows/pre-deploy-screen.yml. On every push
+# and pull request it clones the caliperforge/uniswap-v4-invariants
+# harness at a pinned ref, wires your hook and your BYOH-style test
+# into it, and runs the bring-your-hook invariant walk against the real
+# v4-core PoolManager (no mock, no fork).
+#
+# What this is not: an audit, a runtime guard, or a discovery engine
+# for unknown bug classes. It is a defender-side pre-deploy screen: a
+# clean-leg green run says the encoded properties hold on your hook at
+# the pinned harness rev; it does not clear your hook of a class the
+# harness has not encoded. See adopt/README.md in the harness repo for
+# the honest coverage framing and the full ten-minute integration
+# guide.
+#
+# Two legs, mirroring the harness's own CI:
+#   your-hook-clean-passes        your test suite passes, zero markers
+#   your-planted-mutation-fails   OPTIONAL red leg: any suite you add
+#     with the `Planted` contract-name suffix must FAIL its forge run
+#     AND print an `INVARIANT VIOLATED <name>` marker (inverted
+#     assertion, green exactly when your seeded specification violation
+#     is caught). With no Planted suite present, the leg passes
+#     vacuously, so this workflow is useful before you write one.
+name: pre-deploy-screen
+
+on:
+  push:
+  pull_request:
+
+env:
+  # ---- Adopter-editable knobs (four env vars, nothing else) ----
+
+  # Path to YOUR hook Solidity file, relative to the root of THIS repo
+  # (your hook repo). Compiles under solc 0.8.26; a pragma of ^0.8.24
+  # or similar is fine.
+  HOOK_SRC: src/MyHook.sol
+
+  # Path to YOUR bring-your-hook test file, relative to the root of
+  # THIS repo. Must inherit BYOHInvariantBase and set _hookArtifact()
+  # to "src/adopters/local/<basename of HOOK_SRC>:<ContractName>"
+  # (that is the path the wire-in step below copies your hook to inside
+  # the harness). See adopt/README.md, section 3, for the template.
+  HOOK_TEST: test/pre-deploy-screen/MyHookScreen.t.sol
+
+  # Pin the harness at a specific ref so a downstream harness change
+  # never silently changes what this workflow does. A tag or a full
+  # commit SHA both work. Update deliberately.
+  UV4I_REPO: caliperforge/uniswap-v4-invariants
+  UV4I_REF: 079da75fa6b18e70946eaec37910a876f7d4ed00
+
+jobs:
+  your-hook-clean-passes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your hook repo
+        uses: actions/checkout@v4
+        with:
+          path: your-hook
+
+      - name: Checkout the uv4i harness (pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.UV4I_REPO }}
+          ref: ${{ env.UV4I_REF }}
+          path: harness
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+
+      - name: Cache solc 0.8.26
+        uses: actions/cache@v4
+        with:
+          path: ~/.svm
+          key: solc-0.8.26-${{ runner.os }}
+
+      - name: Wire your hook and test into the harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="your-hook/${HOOK_SRC}"
+          tst="your-hook/${HOOK_TEST}"
+          if [ ! -f "$src" ]; then
+            echo "HOOK_SRC not found: $src" >&2
+            exit 1
+          fi
+          if [ ! -f "$tst" ]; then
+            echo "HOOK_TEST not found: $tst" >&2
+            exit 1
+          fi
+          mkdir -p harness/src/adopters/local harness/test/bring-your-hook
+          cp "$src" "harness/src/adopters/local/$(basename "$src")"
+          cp "$tst" "harness/test/bring-your-hook/$(basename "$tst")"
+
+      - name: Build
+        working-directory: harness
+        run: forge build
+
+      - name: Clean leg (your hook survives the fuzz walk, zero markers)
+        working-directory: harness
+        run: ./ci/clean_leg.sh "test/bring-your-hook/*"
+
+  your-planted-mutation-fails:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your hook repo
+        uses: actions/checkout@v4
+        with:
+          path: your-hook
+
+      - name: Checkout the uv4i harness (pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.UV4I_REPO }}
+          ref: ${{ env.UV4I_REF }}
+          path: harness
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+
+      - name: Cache solc 0.8.26
+        uses: actions/cache@v4
+        with:
+          path: ~/.svm
+          key: solc-0.8.26-${{ runner.os }}
+
+      - name: Wire your hook and test into the harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="your-hook/${HOOK_SRC}"
+          tst="your-hook/${HOOK_TEST}"
+          if [ ! -f "$src" ]; then
+            echo "HOOK_SRC not found: $src" >&2
+            exit 1
+          fi
+          if [ ! -f "$tst" ]; then
+            echo "HOOK_TEST not found: $tst" >&2
+            exit 1
+          fi
+          mkdir -p harness/src/adopters/local harness/test/bring-your-hook
+          cp "$src" "harness/src/adopters/local/$(basename "$src")"
+          cp "$tst" "harness/test/bring-your-hook/$(basename "$tst")"
+          # Optional planted twin: same conventions as the harness.
+          # If you keep a planted copy of your hook alongside your test,
+          # place its source at
+          #   <your-hook-repo>/test/pre-deploy-screen/planted/<HookName>.sol
+          # and its twin suite (contract name ending in `Planted`) as a
+          # sibling of HOOK_TEST. This block copies both if present.
+          planted_dir="your-hook/$(dirname "${HOOK_TEST}")/planted"
+          if [ -d "$planted_dir" ]; then
+            mkdir -p harness/test/bring-your-hook/planted
+            cp -R "$planted_dir"/. harness/test/bring-your-hook/planted/
+          fi
+          # Optional planted twin tests: any *Planted*.sol suite that
+          # sits alongside HOOK_TEST. nullglob so a zero-match glob
+          # expands to nothing instead of the literal pattern.
+          shopt -s nullglob
+          planted_test_dir="your-hook/$(dirname "${HOOK_TEST}")"
+          for p in "$planted_test_dir"/*Planted*.sol; do
+            cp "$p" "harness/test/bring-your-hook/$(basename "$p")"
+          done
+          shopt -u nullglob
+
+      - name: Build
+        working-directory: harness
+        run: forge build
+
+      - name: Planted twins fail with markers (inverted assertion)
+        working-directory: harness
+        run: ./ci/planted_leg.sh "test/bring-your-hook/"

@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# caliper -- one-command wrapper around the uniswap-v4-invariants harness.
+#
+# Two modes:
+#   ./caliper run                    Runs the bundled reference hook + planted
+#                                    case, prints the `INVARIANT VIOLATED`
+#                                    marker, exits 0 iff the marker fired.
+#                                    Target: <5 min on macOS + ubuntu-latest.
+#
+#   ./caliper run <hook.sol>         Wires the given hook into the harness's
+#                                    minimal BYOH scaffold, runs its clean
+#                                    (settlement-liveness) leg, then runs the
+#                                    harness's own planted-case matrix so the
+#                                    marker mechanism is visible on the shipped
+#                                    twins.
+#
+# Additive: the existing bring-your-hook multi-step flow is untouched, and
+# lives under the README "Bring your hook (power-user path)" section.
+#
+# Discipline: no `curl | sh` on Foundry. If `forge` is missing, we print the
+# one actionable install line and exit non-zero. Submodules are auto-init'd
+# because that's a git operation, not a network-shell.
+#
+# Failure surface: `set -euo pipefail`, ERR trap tags the failing step. No
+# stderr suppression. Any step fault exits non-zero with a clear tag.
+
+set -euo pipefail
+
+# ---------------------------------------------------------------- housekeeping
+
+REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$REPO_ROOT"
+
+STEP="init"
+on_err() {
+  local rc=$?
+  echo ""
+  echo "caliper: FAIL at step '${STEP}' (rc=${rc}). See lines above for the failing command."
+  exit "$rc"
+}
+trap on_err ERR
+
+usage() {
+  cat <<'USAGE'
+caliper -- uniswap-v4-invariants one-command wrapper
+
+Usage:
+  ./caliper run                  Run the bundled reference planted case.
+                                 Exits 0 iff the `INVARIANT VIOLATED` marker
+                                 fires on the planted twin.
+
+  ./caliper run <hook.sol>       Wire <hook.sol> into the BYOH minimal
+                                 scaffold, run its clean (settlement-
+                                 liveness) leg, then run the harness's
+                                 planted-case matrix as a marker-mechanism
+                                 demo.
+
+  ./caliper --help               This message.
+
+Environment (adopter-mode overrides; both accept solidity expressions):
+  CALIPER_HOOK_FLAGS_EXPR        Default: Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+  CALIPER_HOOK_CTOR_ARGS_EXPR    Default: ""
+
+Hooks whose permissions/constructor don't match the defaults: follow the
+power-user walkthrough at test/bring-your-hook/README.md.
+USAGE
+}
+
+# ------------------------------------------------------------- arg parsing
+
+case "${1:-}" in
+  ""|"-h"|"--help") usage; exit 0 ;;
+  run) shift ;;
+  *) echo "caliper: unknown command '${1}'. Try ./caliper --help"; exit 2 ;;
+esac
+
+HOOK_PATH="${1:-}"
+
+# ------------------------------------------------------------- dep-bootstrap
+
+STEP="check-forge"
+if ! command -v forge >/dev/null 2>&1; then
+  cat <<'MSG' >&2
+caliper: FAIL at step 'check-forge': `forge` not on PATH.
+
+Install Foundry (one line, from https://book.getfoundry.sh/getting-started/installation):
+
+    curl -L https://foundry.paradigm.xyz | bash && "$HOME/.foundry/bin/foundryup"
+
+Then re-run `./caliper run`. We do NOT auto-install: piping curl to shell is a
+decision you make, not one this wrapper makes for you.
+MSG
+  exit 3
+fi
+
+STEP="check-submodules"
+if [ ! -f "lib/v4-core/foundry.toml" ]; then
+  echo "caliper: initialising git submodules (lib/v4-core, lib/forge-std, transitives)..."
+  git submodule update --init --recursive
+fi
+
+STEP="check-solc-cache"
+# Foundry auto-fetches solc 0.8.26 on first build; no action needed here.
+# The check exists so a fetch failure below tags to this step, not 'build'.
+
+STEP="build"
+echo "caliper: forge build..."
+forge build
+
+# ------------------------------------------------------------- no-arg demo
+
+if [ -z "${HOOK_PATH}" ]; then
+  STEP="bundled-reference"
+  cat <<'INTRO'
+
+------------------------------------------------------------
+caliper: running the bundled reference (ExampleAdopterPlanted).
+
+What this proves: the harness's marker mechanism catches a
+seeded specification violation on a real v4-core PoolManager.
+The planted twin (afterSwap tally skips oneForZero swaps) must
+FAIL with `INVARIANT VIOLATED byoh_example_afterSwap_count`.
+The wrapper reports SUCCESS iff the marker fires.
+------------------------------------------------------------
+INTRO
+  # Delegate marker-assertion to the same script CI uses (ci/planted_leg.sh).
+  # Scoped to the bring-your-hook subtree so only ExampleAdopterPlanted
+  # runs, keeping wall-clock under the AC-2 5-min budget on a MacBook / CI.
+  ./ci/planted_leg.sh test/bring-your-hook/
+  echo ""
+  echo "caliper: bundled-reference demo OK. Marker fired on the planted twin."
+  exit 0
+fi
+
+# ------------------------------------------------------------- adopter mode
+
+STEP="adopter-scaffold"
+if [ ! -f "${HOOK_PATH}" ]; then
+  echo "caliper: FAIL at step 'adopter-scaffold': hook path '${HOOK_PATH}' not found."
+  exit 4
+fi
+
+HOOK_BASENAME="$(basename "${HOOK_PATH}" .sol)"
+# Extract the primary contract name from the hook source (first `contract X is` / `contract X {`).
+HOOK_CONTRACT="$(grep -E '^[[:space:]]*contract[[:space:]]+[A-Za-z0-9_]+' "${HOOK_PATH}" | head -1 | sed -E 's/^[[:space:]]*contract[[:space:]]+([A-Za-z0-9_]+).*/\1/')"
+if [ -z "${HOOK_CONTRACT}" ]; then
+  echo "caliper: FAIL at step 'adopter-scaffold': could not detect a top-level contract in '${HOOK_PATH}'."
+  exit 5
+fi
+
+FLAGS_EXPR="${CALIPER_HOOK_FLAGS_EXPR:-Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG}"
+CTOR_ARGS_EXPR="${CALIPER_HOOK_CTOR_ARGS_EXPR:-}"
+
+ADOPTER_SRC_DIR="src/adopters/caliper-run"
+ADOPTER_TEST_DIR="test/bring-your-hook/adopters"
+mkdir -p "${ADOPTER_SRC_DIR}" "${ADOPTER_TEST_DIR}"
+cp "${HOOK_PATH}" "${ADOPTER_SRC_DIR}/${HOOK_BASENAME}.sol"
+
+cat <<INFO
+
+------------------------------------------------------------
+caliper: adopter mode
+  hook path:      ${HOOK_PATH}
+  hook contract:  ${HOOK_CONTRACT}
+  copied to:      ${ADOPTER_SRC_DIR}/${HOOK_BASENAME}.sol
+  flags expr:     ${FLAGS_EXPR}
+  ctor args:      ${CTOR_ARGS_EXPR:-<none>}
+
+Assumptions this wrapper makes about your hook:
+  1. Its constructor takes zero args (or CALIPER_HOOK_CTOR_ARGS_EXPR is set).
+  2. Its permissions match CALIPER_HOOK_FLAGS_EXPR (default is a
+     beforeSwap+afterSwap hook, matching the CountingHook example).
+Hooks that don't fit: follow the power-user walkthrough at
+test/bring-your-hook/README.md.
+------------------------------------------------------------
+INFO
+
+if [ -z "${CTOR_ARGS_EXPR}" ]; then
+  CTOR_LINE="return \"\";"
+else
+  CTOR_LINE="return abi.encode(${CTOR_ARGS_EXPR});"
+fi
+
+# Generate the minimal BYOH test file. Settlement-liveness is checked for
+# free (BYOHInvariantBase's `fail_on_revert=true` fuzz walk); business-logic
+# properties are the adopter's to declare, per README §Bring your hook.
+GEN_FILE="${ADOPTER_TEST_DIR}/CaliperRun.t.sol"
+cat > "${GEN_FILE}" <<SOL
+// SPDX-License-Identifier: Apache-2.0
+pragma solidity 0.8.26;
+
+// AUTO-GENERATED by ./caliper run <hook-path>. Overwritten on each run.
+// For a hand-written adoption, see test/bring-your-hook/ExampleAdopter.t.sol
+// and the walkthrough at test/bring-your-hook/README.md.
+import {Hooks} from "v4-core/src/libraries/Hooks.sol";
+import {BYOHInvariantBase} from "../BYOHInvariantBase.sol";
+import {${HOOK_CONTRACT}} from "../../../${ADOPTER_SRC_DIR}/${HOOK_BASENAME}.sol";
+
+contract CaliperRunTest is BYOHInvariantBase {
+    function _hookArtifact() internal pure override returns (string memory) {
+        return "${ADOPTER_SRC_DIR}/${HOOK_BASENAME}.sol:${HOOK_CONTRACT}";
+    }
+
+    function _hookFlags() internal pure override returns (uint160) {
+        return uint160(${FLAGS_EXPR});
+    }
+
+    function _hookConstructorArgs() internal view override returns (bytes memory) {
+        ${CTOR_LINE}
+    }
+}
+SOL
+
+STEP="adopter-clean-leg"
+echo "caliper: running settlement-liveness leg on your hook..."
+./ci/clean_leg.sh "${GEN_FILE}"
+
+STEP="planted-matrix-demo"
+echo ""
+echo "caliper: running the harness's planted-case matrix (marker-mechanism demo)..."
+./ci/planted_leg.sh test/
+
+echo ""
+echo "caliper: adopter run OK. Your hook survived the settlement-liveness walk;"
+echo "the planted-case matrix demonstrated the marker mechanism on the shipped twins."
+echo ""
+echo "Next: declare your hook's business-logic properties by hand-writing a"
+echo "BYOH suite. Walkthrough: test/bring-your-hook/README.md (power-user path)."

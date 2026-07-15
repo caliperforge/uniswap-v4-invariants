@@ -1,0 +1,39 @@
+# AC-5: the one-command wrapper (./caliper run) runs as a CI job so the
+# fresh-clone contract stays green under drift. Matrix covers ubuntu-latest
+# (AC-1 primary) and macos-latest (AC-1 second target). Additive: does not
+# touch ci.yml or bring-your-hook.yml.
+name: one-command
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  wrapper-fresh-clone:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout (with submodules, matches fresh git clone --recursive)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+
+      - name: Cache solc 0.8.26
+        uses: actions/cache@v4
+        with:
+          path: ~/.svm
+          key: solc-0.8.26-${{ runner.os }}
+
+      - name: ./caliper run (bundled reference, must print marker)
+        run: ./caliper run
+
+      - name: ./caliper --help (sanity)
+        run: ./caliper --help
