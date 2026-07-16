@@ -52,7 +52,7 @@ jobs:
           # anchor and additive-only; the maintainers do not rewrite
           # history. Pinning a SHA locks the exact fuzz seeds too.
           repository: caliperforge/uniswap-v4-invariants
-          ref: main
+          ref: 25118fdbf2fc497f677ccc93b84a8995e4017a82
           submodules: recursive
           path: caliper
 
