@@ -4,6 +4,7 @@ pragma solidity 0.8.26;
 import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {StdUtils} from "forge-std/StdUtils.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
@@ -245,7 +246,7 @@ contract BYOHActions is StdUtils {
 
         r.swap(
             poolKey,
-            IPoolManager.SwapParams({
+            SwapParams({
                 zeroForOne: zeroForOne,
                 // exact-input per v4 convention; amount is bounded to
                 // maxSwapAmount so the uint256 -> int256 cast is safe
@@ -286,7 +287,7 @@ contract BYOHActions is StdUtils {
 
         r.modifyLiquidity(
             poolKey,
-            IPoolManager.ModifyLiquidityParams({
+            ModifyLiquidityParams({
                 tickLower: -10 * poolKey.tickSpacing,
                 tickUpper: 10 * poolKey.tickSpacing,
                 liquidityDelta: liquidityDelta,

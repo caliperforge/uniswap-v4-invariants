@@ -2,6 +2,7 @@
 pragma solidity 0.8.26;
 
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 import {IUnlockCallback} from "v4-core/src/interfaces/callback/IUnlockCallback.sol";
 import {IERC20Minimal} from "v4-core/src/interfaces/external/IERC20Minimal.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
@@ -43,7 +44,7 @@ contract InvariantRouter is IUnlockCallback {
         manager = _manager;
     }
 
-    function swap(PoolKey memory key, IPoolManager.SwapParams memory params, bytes memory hookData)
+    function swap(PoolKey memory key, SwapParams memory params, bytes memory hookData)
         external
         returns (BalanceDelta delta)
     {
@@ -52,7 +53,7 @@ contract InvariantRouter is IUnlockCallback {
         delta = abi.decode(result, (BalanceDelta));
     }
 
-    function modifyLiquidity(PoolKey memory key, IPoolManager.ModifyLiquidityParams memory params, bytes memory hookData)
+    function modifyLiquidity(PoolKey memory key, ModifyLiquidityParams memory params, bytes memory hookData)
         external
         returns (BalanceDelta delta)
     {
@@ -67,11 +68,11 @@ contract InvariantRouter is IUnlockCallback {
 
         BalanceDelta delta;
         if (data.action == Action.Swap) {
-            delta = manager.swap(data.key, abi.decode(data.params, (IPoolManager.SwapParams)), data.hookData);
+            delta = manager.swap(data.key, abi.decode(data.params, (SwapParams)), data.hookData);
         } else {
             // feesAccrued is informational; callerDelta already includes it.
             (delta,) = manager.modifyLiquidity(
-                data.key, abi.decode(data.params, (IPoolManager.ModifyLiquidityParams)), data.hookData
+                data.key, abi.decode(data.params, (ModifyLiquidityParams)), data.hookData
             );
         }
 

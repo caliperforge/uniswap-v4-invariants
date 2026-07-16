@@ -4,6 +4,7 @@ pragma solidity 0.8.26;
 import {StdUtils} from "forge-std/StdUtils.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {InvariantRouter} from "../../src/routers/InvariantRouter.sol";
@@ -89,7 +90,7 @@ contract PenaltyHandler is StdUtils {
 
         router.modifyLiquidity(
             key,
-            IPoolManager.ModifyLiquidityParams({
+            ModifyLiquidityParams({
                 tickLower: TICK_LOWER,
                 tickUpper: TICK_UPPER,
                 liquidityDelta: int256(uint256(uint128(INITIAL_LIQUIDITY))),
@@ -115,7 +116,7 @@ contract PenaltyHandler is StdUtils {
         int256 delta = int256(amount);
         router.modifyLiquidity(
             key,
-            IPoolManager.ModifyLiquidityParams({
+            ModifyLiquidityParams({
                 tickLower: TICK_LOWER,
                 tickUpper: TICK_UPPER,
                 liquidityDelta: delta,
@@ -144,7 +145,7 @@ contract PenaltyHandler is StdUtils {
         int256 delta = -int256(amount);
         router.modifyLiquidity(
             key,
-            IPoolManager.ModifyLiquidityParams({
+            ModifyLiquidityParams({
                 tickLower: TICK_LOWER,
                 tickUpper: TICK_UPPER,
                 liquidityDelta: delta,
@@ -163,7 +164,7 @@ contract PenaltyHandler is StdUtils {
         int256 specified = -int256(amount);
         router.swap(
             key,
-            IPoolManager.SwapParams({
+            SwapParams({
                 zeroForOne: true,
                 amountSpecified: specified,
                 sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
