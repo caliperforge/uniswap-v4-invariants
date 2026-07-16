@@ -2,10 +2,11 @@
 // OpenZeppelin Uniswap Hooks (last updated v1.1.0) (src/fee/BaseDynamicAfterFee.sol)
 // VENDORED from OpenZeppelin/uniswap-hooks tag v1.1.0. See ../NOTICE for patch policy.
 // Patch (this file): sibling `src/base|utils|interfaces/*.sol` imports rewritten to
-// `./*.sol`; `SwapParams` referenced via `IPoolManager.SwapParams`; the
-// `v4-core/src/types/PoolOperation.sol` import (introduced by a later v4-core
-// refactor) is removed. The audited fee-arithmetic block (lines 155-174 here,
-// lines 147-190 upstream) is byte-faithful to the fix commit `2678eb9`.
+// `./*.sol`. `SwapParams` / `ModifyLiquidityParams` imported from
+// `v4-core/src/types/PoolOperation.sol` (byte-faithful to upstream v1.1.0;
+// v4-core pin `^1.0.2` carries `PoolOperation.sol`). The audited fee-arithmetic
+// block (lines 155-174 here, lines 147-190 upstream) is byte-faithful to the
+// fix commit `2678eb9`.
 
 pragma solidity ^0.8.24;
 
@@ -14,6 +15,7 @@ import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {CurrencySettler} from "./CurrencySettler.sol";
@@ -100,7 +102,7 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
      *
      * NOTE: The target unspecified amount and the apply flag are reset in the `afterSwap` hook.
      */
-    function _beforeSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata hookData)
+    function _beforeSwap(address sender, PoolKey calldata key, SwapParams calldata params, bytes calldata hookData)
         internal
         virtual
         override
@@ -130,7 +132,7 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
     function _afterSwap(
         address sender,
         PoolKey calldata key,
-        IPoolManager.SwapParams calldata params,
+        SwapParams calldata params,
         BalanceDelta delta,
         bytes calldata
     ) internal virtual override returns (bytes4, int128) {
@@ -203,7 +205,7 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
     function _getTargetUnspecified(
         address sender,
         PoolKey calldata key,
-        IPoolManager.SwapParams calldata params,
+        SwapParams calldata params,
         bytes calldata hookData
     ) internal virtual returns (uint256 targetUnspecifiedAmount, bool applyTarget);
 
@@ -221,7 +223,7 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
      */
     function _afterSwapHandler(
         PoolKey calldata key,
-        IPoolManager.SwapParams calldata params,
+        SwapParams calldata params,
         BalanceDelta delta,
         uint256 targetUnspecifiedAmount,
         uint256 feeAmount

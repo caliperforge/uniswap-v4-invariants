@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // OpenZeppelin Uniswap Hooks (last updated v0.1.0) (src/base/BaseHook.sol)
 // VENDORED from OpenZeppelin/uniswap-hooks tag v1.1.0. See ../NOTICE for patch policy.
-// Patch (this file): `SwapParams` and `ModifyLiquidityParams` are referenced
-// via `IPoolManager.SwapParams` and `IPoolManager.ModifyLiquidityParams`;
-// the `v4-core/src/types/PoolOperation.sol` import (introduced by a later
-// v4-core refactor) is removed. No hook-logic byte was altered.
+// Patch (this file): `SwapParams` and `ModifyLiquidityParams` imported from
+// `v4-core/src/types/PoolOperation.sol` (byte-faithful to upstream v1.1.0;
+// v4-core pin `^1.0.2` carries `PoolOperation.sol`). No hook-logic byte
+// was altered.
 
 pragma solidity ^0.8.24;
 
@@ -13,6 +13,7 @@ import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 import {BeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
 
 /**
@@ -150,7 +151,7 @@ abstract contract BaseHook is IHooks {
     function beforeAddLiquidity(
         address sender,
         PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata params,
+        ModifyLiquidityParams calldata params,
         bytes calldata hookData
     ) external virtual onlyPoolManager returns (bytes4) {
         return _beforeAddLiquidity(sender, key, params, hookData);
@@ -160,7 +161,7 @@ abstract contract BaseHook is IHooks {
      * @dev Hook implementation for `beforeAddLiquidity`, to be overriden by the inheriting hook. The
      * flag must be set to true in the `getHookPermissions` function.
      */
-    function _beforeAddLiquidity(address, PoolKey calldata, IPoolManager.ModifyLiquidityParams calldata, bytes calldata)
+    function _beforeAddLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
         internal
         virtual
         returns (bytes4)
@@ -174,7 +175,7 @@ abstract contract BaseHook is IHooks {
     function beforeRemoveLiquidity(
         address sender,
         PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata params,
+        ModifyLiquidityParams calldata params,
         bytes calldata hookData
     ) external virtual onlyPoolManager returns (bytes4) {
         return _beforeRemoveLiquidity(sender, key, params, hookData);
@@ -184,7 +185,7 @@ abstract contract BaseHook is IHooks {
      * @dev Hook implementation for `beforeRemoveLiquidity`, to be overriden by the inheriting hook. The
      * flag must be set to true in the `getHookPermissions` function.
      */
-    function _beforeRemoveLiquidity(address, PoolKey calldata, IPoolManager.ModifyLiquidityParams calldata, bytes calldata)
+    function _beforeRemoveLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
         internal
         virtual
         returns (bytes4)
@@ -198,7 +199,7 @@ abstract contract BaseHook is IHooks {
     function afterAddLiquidity(
         address sender,
         PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata params,
+        ModifyLiquidityParams calldata params,
         BalanceDelta delta0,
         BalanceDelta delta1,
         bytes calldata hookData
@@ -213,7 +214,7 @@ abstract contract BaseHook is IHooks {
     function _afterAddLiquidity(
         address,
         PoolKey calldata,
-        IPoolManager.ModifyLiquidityParams calldata,
+        ModifyLiquidityParams calldata,
         BalanceDelta,
         BalanceDelta,
         bytes calldata
@@ -227,7 +228,7 @@ abstract contract BaseHook is IHooks {
     function afterRemoveLiquidity(
         address sender,
         PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata params,
+        ModifyLiquidityParams calldata params,
         BalanceDelta delta0,
         BalanceDelta delta1,
         bytes calldata hookData
@@ -242,7 +243,7 @@ abstract contract BaseHook is IHooks {
     function _afterRemoveLiquidity(
         address,
         PoolKey calldata,
-        IPoolManager.ModifyLiquidityParams calldata,
+        ModifyLiquidityParams calldata,
         BalanceDelta,
         BalanceDelta,
         bytes calldata
@@ -253,7 +254,7 @@ abstract contract BaseHook is IHooks {
     /**
      * @inheritdoc IHooks
      */
-    function beforeSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata hookData)
+    function beforeSwap(address sender, PoolKey calldata key, SwapParams calldata params, bytes calldata hookData)
         external
         virtual
         onlyPoolManager
@@ -266,7 +267,7 @@ abstract contract BaseHook is IHooks {
      * @dev Hook implementation for `beforeSwap`, to be overriden by the inheriting hook. The
      * flag must be set to true in the `getHookPermissions` function.
      */
-    function _beforeSwap(address, PoolKey calldata, IPoolManager.SwapParams calldata, bytes calldata)
+    function _beforeSwap(address, PoolKey calldata, SwapParams calldata, bytes calldata)
         internal
         virtual
         returns (bytes4, BeforeSwapDelta, uint24)
@@ -280,7 +281,7 @@ abstract contract BaseHook is IHooks {
     function afterSwap(
         address sender,
         PoolKey calldata key,
-        IPoolManager.SwapParams calldata params,
+        SwapParams calldata params,
         BalanceDelta delta,
         bytes calldata hookData
     ) external virtual onlyPoolManager returns (bytes4, int128) {
@@ -291,7 +292,7 @@ abstract contract BaseHook is IHooks {
      * @dev Hook implementation for `afterSwap`, to be overriden by the inheriting hook. The
      * flag must be set to true in the `getHookPermissions` function.
      */
-    function _afterSwap(address, PoolKey calldata, IPoolManager.SwapParams calldata, BalanceDelta, bytes calldata)
+    function _afterSwap(address, PoolKey calldata, SwapParams calldata, BalanceDelta, bytes calldata)
         internal
         virtual
         returns (bytes4, int128)

@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
@@ -126,8 +127,8 @@ abstract contract RewardsCase is V4TestBase {
     /// Only the real PoolManager may call the hook callbacks; this test
     /// contract is not the manager.
     function test_unit_onlyManagerCallsCallbacks() public {
-        IPoolManager.SwapParams memory params =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -1, sqrtPriceLimitX96: 0});
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: -1, sqrtPriceLimitX96: 0});
         vm.expectRevert(RewardsHook.NotManager.selector);
         hook.beforeSwap(address(this), key, params, "");
         vm.expectRevert(RewardsHook.NotManager.selector);

@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
@@ -41,7 +42,7 @@ contract LeakyTakeHook {
         );
     }
 
-    function beforeSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata, bytes calldata hookData)
+    function beforeSwap(address sender, PoolKey calldata key, SwapParams calldata, bytes calldata hookData)
         external
         returns (bytes4, BeforeSwapDelta, uint24)
     {

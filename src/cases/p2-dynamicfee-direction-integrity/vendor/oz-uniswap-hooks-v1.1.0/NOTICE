@@ -16,26 +16,19 @@ This case (`experiments/uniswap-v4-invariants/src/cases/p2-dynamicfee-
 direction-integrity`) subclasses OpenZeppelin's actual audited
 `BaseDynamicAfterFee` to teach the direction-blind fee-arithmetic bug
 that `2678eb9` remediated (the finding recorded as M-01 in the OZ
-Uniswap Hooks v1.1.0 RC 2 audit). The upstream `BaseDynamicAfterFee`
-imports `SwapParams` from `v4-core/src/types/PoolOperation.sol`, which
-does not exist in the v4-core tag `v4.0.0` this repository pins;
-bumping v4-core across the repository would touch every other case's
-compile path and violate the additive-only rail this build ships
-under. Vendoring the four files here (with `SwapParams` /
-`ModifyLiquidityParams` referenced as `IPoolManager.SwapParams` /
-`IPoolManager.ModifyLiquidityParams`, and internal sibling imports
-rewritten to `./` paths) lets the case's clean twin BE the audited
-fixed contract, byte-faithful in the fee-arithmetic block, while
-leaving the other five cases untouched.
+Uniswap Hooks v1.1.0 RC 2 audit). Vendoring the four files here (with
+internal sibling imports rewritten to `./` paths) lets the case's
+clean twin BE the audited fixed contract, byte-faithful in the
+fee-arithmetic block, while leaving the other five cases untouched.
 
 Patches applied to the vendored files (delta from upstream v1.1.0):
   1. Internal `src/<subdir>/*.sol` imports rewritten to `./*.sol`
      sibling imports (BaseHook, CurrencySettler, IHookEvents).
-  2. `import {SwapParams} from "v4-core/src/types/PoolOperation.sol";`
-     removed; `SwapParams` and `ModifyLiquidityParams` references in
-     function signatures rewritten to `IPoolManager.SwapParams` and
-     `IPoolManager.ModifyLiquidityParams` (identical struct fields in
-     v4-core `v4.0.0`, which pre-dates the PoolOperation.sol split).
+  2. `SwapParams` / `ModifyLiquidityParams` are imported from
+     `v4-core/src/types/PoolOperation.sol` (byte-faithful to
+     upstream v1.1.0, which imports the same). The v4-core pin
+     (`^1.0.2`, matching the OZ hooks package.json declaration)
+     carries `PoolOperation.sol`, so no local rewrite is needed.
      No fee-arithmetic block was altered.
   3. `openzeppelin/utils/*` and `openzeppelin/token/*` imports left
      unchanged; the top-level foundry.toml carries a case-scoped

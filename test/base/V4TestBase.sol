@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {console2} from "forge-std/console2.sol";
 import {PoolManager} from "v4-core/src/PoolManager.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
@@ -77,7 +78,7 @@ abstract contract V4TestBase is Test {
         token1.approve(address(router), type(uint256).max);
         router.modifyLiquidity(
             key,
-            IPoolManager.ModifyLiquidityParams({
+            ModifyLiquidityParams({
                 tickLower: -10 * tickSpacing,
                 tickUpper: 10 * tickSpacing,
                 liquidityDelta: 1_000e18,
@@ -94,7 +95,7 @@ abstract contract V4TestBase is Test {
     {
         delta = via.swap(
             key,
-            IPoolManager.SwapParams({
+            SwapParams({
                 zeroForOne: true,
                 amountSpecified: amountSpecified,
                 sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1

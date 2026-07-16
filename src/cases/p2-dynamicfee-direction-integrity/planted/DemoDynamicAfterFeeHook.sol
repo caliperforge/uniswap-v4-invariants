@@ -4,6 +4,7 @@ pragma solidity 0.8.26;
 import {BaseDynamicAfterFee} from "../vendor/oz-uniswap-hooks-v1.1.0/BaseDynamicAfterFee.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
@@ -57,7 +58,7 @@ contract DemoDynamicAfterFeeHook is BaseDynamicAfterFee {
     function _getTargetUnspecified(
         address,
         PoolKey calldata,
-        IPoolManager.SwapParams calldata,
+        SwapParams calldata,
         bytes calldata
     ) internal pure override returns (uint256 targetUnspecifiedAmount, bool applyTarget) {
         return (0, true);
@@ -65,7 +66,7 @@ contract DemoDynamicAfterFeeHook is BaseDynamicAfterFee {
 
     function _afterSwapHandler(
         PoolKey calldata,
-        IPoolManager.SwapParams calldata,
+        SwapParams calldata,
         BalanceDelta,
         uint256,
         uint256
@@ -81,7 +82,7 @@ contract DemoDynamicAfterFeeHook is BaseDynamicAfterFee {
     function _afterSwap(
         address,
         PoolKey calldata key,
-        IPoolManager.SwapParams calldata params,
+        SwapParams calldata params,
         BalanceDelta delta,
         bytes calldata
     ) internal override returns (bytes4, int128) {

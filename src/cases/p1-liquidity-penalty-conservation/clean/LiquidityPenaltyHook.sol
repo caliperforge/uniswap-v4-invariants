@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 import {IERC20Minimal} from "v4-core/src/interfaces/external/IERC20Minimal.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {Position} from "v4-core/src/libraries/Position.sol";
@@ -110,7 +111,7 @@ contract LiquidityPenaltyHook {
     function afterAddLiquidity(
         address sender,
         PoolKey calldata,
-        IPoolManager.ModifyLiquidityParams calldata params,
+        ModifyLiquidityParams calldata params,
         BalanceDelta,
         BalanceDelta feesAccrued,
         bytes calldata
@@ -141,7 +142,7 @@ contract LiquidityPenaltyHook {
     function afterRemoveLiquidity(
         address sender,
         PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata params,
+        ModifyLiquidityParams calldata params,
         BalanceDelta,
         BalanceDelta feesAccrued,
         bytes calldata
