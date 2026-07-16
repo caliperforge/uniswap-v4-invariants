@@ -1,0 +1,115 @@
+# caliper bring-your-hook screen for Alphix.sol
+#
+# What this does: on every push and PR, checks out the caliperforge
+# uniswap-v4-invariants harness at a pinned commit, wires this repo's
+# `src/Alphix.sol` into its adopter-mode scaffold, and runs two legs:
+#   1. settlement-liveness fuzz walk against the real Alphix hook
+#      (256 runs, 12,800 calls, must show 0 reverts / no unsettled
+#      delta / no wrong-selector return)
+#   2. the harness's own planted-case matrix, which fires the eight
+#      shipped `INVARIANT VIOLATED` markers so the marker mechanism
+#      is visible on the same job that green-gates the hook
+#
+# The screen tests hook <-> PoolManager settlement behaviour, not
+# Alphix's business-logic invariants. Declaring hook-specific
+# properties (fee-direction monotonicity etc.) is a follow-up step
+# described in the caliper repo's test/bring-your-hook/README.md.
+#
+# All wiring is inline below. No secrets, no third-party actions
+# beyond actions/checkout, actions/cache, and foundry-rs/foundry-toolchain
+# (each pinned to a major version).
+
+name: caliper-bring-your-hook
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  screen:
+    name: Screen Alphix.sol via caliper
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout alphix-core (this repo)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          path: alphix-core
+
+      - name: Checkout caliper harness (pinned)
+        uses: actions/checkout@v4
+        with:
+          # PINNING NOTE: replace `main` with a specific commit SHA
+          # once you have picked one you want to freeze against. `main`
+          # of caliperforge/uniswap-v4-invariants is a public grant
+          # anchor and additive-only; the maintainers do not rewrite
+          # history. Pinning a SHA locks the exact fuzz seeds too.
+          repository: caliperforge/uniswap-v4-invariants
+          ref: main
+          submodules: recursive
+          path: caliper
+
+      - name: Install Foundry (v1.7.1, matches caliper's pinned toolchain)
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+
+      - name: Cache solc 0.8.26
+        uses: actions/cache@v4
+        with:
+          path: ~/.svm
+          key: solc-0.8.26-${{ runner.os }}
+
+      - name: Run caliper adopter mode against src/Alphix.sol
+        working-directory: caliper
+        env:
+          # Alphix uses BEFORE_INITIALIZE (owner-gated init check),
+          # BEFORE_SWAP (dynamic-fee override), AFTER_SWAP (ratio
+          # accounting). Anything the hook does not implement stays off.
+          CALIPER_HOOK_FLAGS_EXPR: "Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG"
+
+          # AccessManager address is required by the Alphix constructor;
+          # deployed in _deployPrereqs (below) before ctor args resolve.
+          # The _poolFee override returns v4's DYNAMIC_FEE_FLAG
+          # (0x800000) so PoolManager accepts updateDynamicLPFee calls;
+          # BaseDynamicFee reverts on a static-fee pool.
+          CALIPER_HOOK_STATE_DECLS: |-
+            AccessManager internal _accessMgr;
+                function _poolFee() internal pure override returns (uint24) { return 0x800000; }
+
+          CALIPER_HOOK_EXTRA_IMPORTS: |-
+            import {AccessManager} from "@openzeppelin/contracts/access/manager/AccessManager.sol";
+            import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+            import {Alphix} from "../../../src/adopters/caliper-run/Alphix.sol";
+            import {DynamicFeeLib} from "../../../src/adopters/caliper-run/libraries/DynamicFee.sol";
+            import {PoolKey} from "v4-core/src/types/PoolKey.sol";
+
+          CALIPER_HOOK_PREREQ_EXPR: "_accessMgr = new AccessManager(address(this));"
+
+          # Ctor: (IPoolManager, owner, IAccessManager, ERC20 name, symbol).
+          # Owner is the test contract itself so _beforeInitialize's
+          # `sender == owner()` check passes when the harness initializes
+          # the pool.
+          CALIPER_HOOK_CTOR_ARGS_EXPR: 'IPoolManager(address(manager)), address(this), address(_accessMgr), "AlphixShares", "AX"'
+
+          # Alphix's initializePool takes (PoolKey, initialFee, initialTargetRatio,
+          # PoolParams calldata, tickLower, tickUpper). Values below are within
+          # AlphixGlobalConstants' bounds; the harness only needs the hook
+          # unpaused so the settlement leg can drive real swaps.
+          CALIPER_HOOK_INIT_EXPR: |-
+            DynamicFeeLib.PoolParams memory _pp = DynamicFeeLib.PoolParams({minFee: 100, maxFee: 10000, baseMaxFeeDelta: 100, lookbackPeriod: 30, minPeriod: 1 hours, ratioTolerance: 5e15, linearSlope: 5e17, maxCurrentRatio: 1e21, upperSideFactor: 1e18, lowerSideFactor: 1e18});
+                    Alphix(hookAddress).initializePool(poolKey, 3000, 1e18, _pp, -600, 600);
+
+          # SRC_ROOT bounds the recursive relative-import walk. Alphix
+          # imports sibling files under src/ (libraries/, interfaces/,
+          # BaseDynamicFee.sol); this points the walker at that root.
+          CALIPER_HOOK_SRC_ROOT: ${{ github.workspace }}/alphix-core/src
+
+        run: ./caliper run ${{ github.workspace }}/alphix-core/src/Alphix.sol

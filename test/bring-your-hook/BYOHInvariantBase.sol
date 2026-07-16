@@ -79,10 +79,22 @@ abstract contract BYOHInvariantBase is V4TestBase, IBYOHLedger {
 
     // ------------------- optional adopter surface --------------------
 
+    /// Deploy any prerequisite contracts (AccessManager, oracle, etc.)
+    /// the hook's constructor needs, and cache their addresses in
+    /// state your `_hookConstructorArgs()` override can read.
+    /// Called BEFORE `_hookConstructorArgs()` in the setup order:
+    ///     deployV4Core -> _deployPrereqs -> _hookConstructorArgs
+    ///     -> deployHookTo -> initPoolWithLiquidity -> _afterSetUp.
+    /// Default is a no-op; override only for hooks whose constructor
+    /// takes references to contracts the harness does not know about.
+    function _deployPrereqs() internal virtual {}
+
     /// abi.encode(...) of your hook's constructor args. `manager` is
     /// already deployed when this is called, so hooks taking the
-    /// manager return abi.encode(address(manager)).
-    function _hookConstructorArgs() internal view virtual returns (bytes memory) {
+    /// manager return abi.encode(address(manager)). Non-view so
+    /// adopters MAY inline prereq deploys here directly; the cleaner
+    /// pattern is `_deployPrereqs()` -> state var -> read here.
+    function _hookConstructorArgs() internal virtual returns (bytes memory) {
         return "";
     }
 
@@ -141,6 +153,10 @@ abstract contract BYOHInvariantBase is V4TestBase, IBYOHLedger {
         );
         token0.mint(address(actions), 1_000_000e18);
         token1.mint(address(actions), 1_000_000e18);
+
+        // Prereqs (e.g. an AccessManager the hook's ctor takes) go
+        // here; they must exist before _hookConstructorArgs() runs.
+        _deployPrereqs();
 
         // deployCodeTo runs the constructor AT the flag-encoded
         // address, so a hook that self-validates its permissions (the
