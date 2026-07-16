@@ -21,7 +21,35 @@ via_ir = false
 remappings = [
     "forge-std/=lib/forge-std/src/",
     "v4-core/=lib/v4-core/",
+    # `@uniswap/v4-core/` alias for `v4-core/` -- OZ's uniswap-hooks
+    # BaseHook and current-upstream v4 hooks (e.g. Alphix) import
+    # v4-core types via the npm-package prefix `@uniswap/v4-core/...`;
+    # our own code and the harness import them via `v4-core/...`. Point
+    # both prefixes at the SAME physical submodule so the graph carries
+    # ONE `IPoolManager` type -- otherwise Foundry silently auto-infers
+    # `@uniswap/v4-core/=lib/openzeppelin-uniswap-hooks/lib/v4-core/`
+    # and the adopter build fails with "invalid implicit conversion
+    # from IPoolManager to IPoolManager". Required for the caliper
+    # multi-file adopter run.
+    "@uniswap/v4-core/=lib/v4-core/",
     "solmate/=lib/v4-core/lib/solmate/",
+    # More-specific `@openzeppelin/uniswap-hooks/` and
+    # `@openzeppelin/contracts/` MUST sit before the shorter
+    # `@openzeppelin/=` fallback (Foundry does first-match-wins on
+    # prefix; declaration order is the tiebreaker).
+    # Modern OZ Uniswap Hooks releases (>= v1.2) and current-upstream
+    # hooks import BaseHook / CurrencySettler via this npm-prefix
+    # path; the caliper adopter needs it for any hook not built
+    # against our vendored v1.1.0 tree.
+    "@openzeppelin/uniswap-hooks/=lib/openzeppelin-uniswap-hooks/",
+    # Alphix (and any OZ hook >= v5.1) needs
+    # `ReentrancyGuardTransient` / `TransientSlot` / `SlotDerivation`,
+    # which v4-core's pinned OZ contracts (v5.0.2) do not carry. OZ
+    # hooks's nested `openzeppelin-contracts` submodule is v5.3.0 and
+    # does carry them. v4-core's own only `@openzeppelin/contracts/*`
+    # import is `Proxy.sol`, present in both versions -- safe redirect
+    # for the harness itself.
+    "@openzeppelin/contracts/=lib/openzeppelin-uniswap-hooks/lib/openzeppelin-contracts/contracts/",
     "@openzeppelin/=lib/v4-core/lib/openzeppelin-contracts/",
     # C-P2 pins the OZ Uniswap Hooks library at tag v1.2.1 so a reviewer
     # can diff our clean twin against the audited post-`2678eb9` base

@@ -2,3 +2,9 @@ out/
 cache/
 broadcast/
 .env
+
+# Adopter-mode scratch surface: `./caliper run <hook.sol>` vendors the
+# hook's import graph here and regenerates the BYOH test file each
+# invocation. Neither is source-controlled.
+src/adopters/caliper-run/
+test/bring-your-hook/adopters/CaliperRun.t.sol

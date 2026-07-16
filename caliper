@@ -1,0 +1,318 @@
+#!/usr/bin/env bash
+# caliper -- one-command wrapper around the uniswap-v4-invariants harness.
+#
+# Two modes:
+#   ./caliper run                    Runs the bundled reference hook + planted
+#                                    case, prints the `INVARIANT VIOLATED`
+#                                    marker, exits 0 iff the marker fired.
+#                                    Target: <5 min on macOS + ubuntu-latest.
+#
+#   ./caliper run <hook.sol>         Wires the given hook into the harness's
+#                                    minimal BYOH scaffold, runs its clean
+#                                    (settlement-liveness) leg, then runs the
+#                                    harness's own planted-case matrix so the
+#                                    marker mechanism is visible on the shipped
+#                                    twins.
+#
+# Multi-file hooks: the wrapper walks the hook's Solidity import graph
+# and vendors every project-local (relative-import) sibling into the
+# adopter scaffold, preserving relative subpaths. External imports
+# (package-prefixed) resolve via the harness's Foundry remappings; the
+# wrapper prints each prefix it saw so a reviewer can spot a missing
+# remapping without digging. Hooks whose deps outrun our pinned
+# `lib/v4-core` and `lib/openzeppelin-uniswap-hooks` versions need the
+# power-user path (see test/bring-your-hook/README.md).
+#
+# Additive: the existing bring-your-hook multi-step flow is untouched, and
+# lives under the README "Bring your hook (power-user path)" section.
+#
+# Discipline: no `curl | sh` on Foundry. If `forge` is missing, we print the
+# one actionable install line and exit non-zero. Submodules are auto-init'd
+# because that's a git operation, not a network-shell.
+#
+# Failure surface: `set -euo pipefail`, ERR trap tags the failing step. No
+# stderr suppression. Any step fault exits non-zero with a clear tag.
+
+set -euo pipefail
+
+# ---------------------------------------------------------------- housekeeping
+
+REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$REPO_ROOT"
+
+STEP="init"
+on_err() {
+  local rc=$?
+  echo ""
+  echo "caliper: FAIL at step '${STEP}' (rc=${rc}). See lines above for the failing command."
+  exit "$rc"
+}
+trap on_err ERR
+
+usage() {
+  cat <<'USAGE'
+caliper -- uniswap-v4-invariants one-command wrapper
+
+Usage:
+  ./caliper run                  Run the bundled reference planted case.
+                                 Exits 0 iff the `INVARIANT VIOLATED` marker
+                                 fires on the planted twin.
+
+  ./caliper run <hook.sol>       Wire <hook.sol> into the BYOH minimal
+                                 scaffold, run its clean (settlement-
+                                 liveness) leg, then run the harness's
+                                 planted-case matrix as a marker-mechanism
+                                 demo. Multi-file hooks are auto-vendored
+                                 (relative imports walked recursively).
+
+  ./caliper --help               This message.
+
+Environment (adopter-mode overrides; all accept solidity expressions):
+  CALIPER_HOOK_FLAGS_EXPR        Default: Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+  CALIPER_HOOK_CTOR_ARGS_EXPR    Default: ""   (no-arg constructor)
+                                 e.g. `address(manager), address(this), address(_accessMgr), "N", "S"`
+  CALIPER_HOOK_PREREQ_EXPR       Solidity statement(s) executed in _deployPrereqs()
+                                 BEFORE the ctor args are computed. Adopters use this to
+                                 deploy an AccessManager, oracle, etc. and cache addresses
+                                 in state-var slots CTOR_ARGS_EXPR then references.
+                                 e.g. `_accessMgr = new AccessManager(address(this));`
+  CALIPER_HOOK_INIT_EXPR         Solidity statement(s) executed in _afterSetUp() to
+                                 initialise a hook that starts paused, e.g.
+                                 `MyHook(hookAddress).initializePool(poolKey, ...);`
+  CALIPER_HOOK_STATE_DECLS       Extra state-var declarations to put in the generated
+                                 test contract, referenced by PREREQ_EXPR / CTOR_ARGS_EXPR /
+                                 INIT_EXPR. e.g. `AccessManager _accessMgr;`
+  CALIPER_HOOK_EXTRA_IMPORTS     Extra `import` lines to put in the generated test
+                                 contract, one statement per line (newline-separated).
+                                 e.g. `import {AccessManager} from "@openzeppelin/contracts/access/manager/AccessManager.sol";`
+  CALIPER_HOOK_SRC_ROOT          Absolute path of the hook's project source root, used
+                                 to bound relative-import resolution. Defaults to the
+                                 directory containing <hook.sol>. Set to the hook repo's
+                                 `src/` when the hook imports from sibling directories
+                                 above its own folder.
+
+Hooks whose permissions/constructor don't match the wrapper's shape, or whose
+package deps outrun our pinned lib versions: follow the power-user walkthrough
+at test/bring-your-hook/README.md.
+USAGE
+}
+
+# ------------------------------------------------------------- arg parsing
+
+case "${1:-}" in
+  ""|"-h"|"--help") usage; exit 0 ;;
+  run) shift ;;
+  *) echo "caliper: unknown command '${1}'. Try ./caliper --help"; exit 2 ;;
+esac
+
+HOOK_PATH="${1:-}"
+
+# ------------------------------------------------------------- dep-bootstrap
+
+STEP="check-forge"
+if ! command -v forge >/dev/null 2>&1; then
+  cat <<'MSG' >&2
+caliper: FAIL at step 'check-forge': `forge` not on PATH.
+
+Install Foundry (one line, from https://book.getfoundry.sh/getting-started/installation):
+
+    curl -L https://foundry.paradigm.xyz | bash && "$HOME/.foundry/bin/foundryup"
+
+Then re-run `./caliper run`. We do NOT auto-install: piping curl to shell is a
+decision you make, not one this wrapper makes for you.
+MSG
+  exit 3
+fi
+
+STEP="check-python"
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "caliper: FAIL at step 'check-python': python3 not on PATH. Adopter-mode multi-file resolution needs it (stdlib only, no pip)." >&2
+  exit 3
+fi
+
+STEP="check-submodules"
+if [ ! -f "lib/v4-core/foundry.toml" ]; then
+  echo "caliper: initialising git submodules (lib/v4-core, lib/forge-std, transitives)..."
+  git submodule update --init --recursive
+fi
+
+STEP="check-solc-cache"
+# Foundry auto-fetches solc 0.8.26 on first build; no action needed here.
+# The check exists so a fetch failure below tags to this step, not 'build'.
+
+# Wipe any prior adopter-run vendor tree BEFORE the initial `forge build`:
+# a stale vendored hook from a previous `./caliper run <path>` invocation
+# lives under `src/adopters/caliper-run/` and would otherwise fail this
+# top-level build (unresolved imports pointing at that stale tree).
+STEP="wipe-prior-adopter"
+rm -rf src/adopters/caliper-run
+rm -f test/bring-your-hook/adopters/CaliperRun.t.sol
+
+STEP="build"
+echo "caliper: forge build..."
+forge build
+
+# ------------------------------------------------------------- no-arg demo
+
+if [ -z "${HOOK_PATH}" ]; then
+  STEP="bundled-reference"
+  cat <<'INTRO'
+
+------------------------------------------------------------
+caliper: running the bundled reference (ExampleAdopterPlanted).
+
+What this proves: the harness's marker mechanism catches a
+seeded specification violation on a real v4-core PoolManager.
+The planted twin (afterSwap tally skips oneForZero swaps) must
+FAIL with `INVARIANT VIOLATED byoh_example_afterSwap_count`.
+The wrapper reports SUCCESS iff the marker fires.
+------------------------------------------------------------
+INTRO
+  # Delegate marker-assertion to the same script CI uses (ci/planted_leg.sh).
+  # Scoped to the bring-your-hook subtree so only ExampleAdopterPlanted
+  # runs, keeping wall-clock under the AC-2 5-min budget on a MacBook / CI.
+  ./ci/planted_leg.sh test/bring-your-hook/
+  echo ""
+  echo "caliper: bundled-reference demo OK. Marker fired on the planted twin."
+  exit 0
+fi
+
+# ------------------------------------------------------------- adopter mode
+
+STEP="adopter-scaffold"
+if [ ! -f "${HOOK_PATH}" ]; then
+  echo "caliper: FAIL at step 'adopter-scaffold': hook path '${HOOK_PATH}' not found."
+  exit 4
+fi
+
+HOOK_ABS="$(cd "$(dirname "${HOOK_PATH}")" && pwd)/$(basename "${HOOK_PATH}")"
+HOOK_BASENAME="$(basename "${HOOK_PATH}" .sol)"
+# Extract the primary contract name from the hook source (first `contract X is` / `contract X {`).
+HOOK_CONTRACT="$(grep -E '^[[:space:]]*contract[[:space:]]+[A-Za-z0-9_]+' "${HOOK_PATH}" | head -1 | sed -E 's/^[[:space:]]*contract[[:space:]]+([A-Za-z0-9_]+).*/\1/')"
+if [ -z "${HOOK_CONTRACT}" ]; then
+  echo "caliper: FAIL at step 'adopter-scaffold': could not detect a top-level contract in '${HOOK_PATH}'."
+  exit 5
+fi
+
+FLAGS_EXPR="${CALIPER_HOOK_FLAGS_EXPR:-Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG}"
+CTOR_ARGS_EXPR="${CALIPER_HOOK_CTOR_ARGS_EXPR:-}"
+PREREQ_EXPR="${CALIPER_HOOK_PREREQ_EXPR:-}"
+INIT_EXPR="${CALIPER_HOOK_INIT_EXPR:-}"
+STATE_DECLS="${CALIPER_HOOK_STATE_DECLS:-}"
+EXTRA_IMPORTS="${CALIPER_HOOK_EXTRA_IMPORTS:-}"
+SRC_ROOT="${CALIPER_HOOK_SRC_ROOT:-$(dirname "${HOOK_ABS}")}"
+# Normalise to absolute, no trailing slash.
+SRC_ROOT="$(cd "${SRC_ROOT}" && pwd)"
+
+ADOPTER_SRC_DIR="src/adopters/caliper-run"
+ADOPTER_TEST_DIR="test/bring-your-hook/adopters"
+# The pre-build step already wiped ADOPTER_SRC_DIR; just re-create the
+# scaffolding dirs. Test file is regenerated below.
+mkdir -p "${ADOPTER_SRC_DIR}" "${ADOPTER_TEST_DIR}"
+
+STEP="adopter-vendor-imports"
+# Recursively walk the hook's import graph and vendor every relative
+# import into ${ADOPTER_SRC_DIR}, mirroring the sibling directory shape
+# so the copied files' own relative imports still resolve.
+EXTERNALS="$(python3 ci/vendor_hook_imports.py "${HOOK_ABS}" "${SRC_ROOT}" "${ADOPTER_SRC_DIR}")"
+
+# HOOK_REL is the hook's path relative to SRC_ROOT -- exactly the
+# subpath the vendor helper mirrored under ADOPTER_SRC_DIR.
+HOOK_REL="${HOOK_ABS#${SRC_ROOT}/}"
+
+cat <<INFO
+
+------------------------------------------------------------
+caliper: adopter mode
+  hook path:      ${HOOK_PATH}
+  hook contract:  ${HOOK_CONTRACT}
+  project root:   ${SRC_ROOT}
+  vendored to:    ${ADOPTER_SRC_DIR}/${HOOK_REL}
+                  (plus every relative-imported sibling, recursively)
+  flags expr:     ${FLAGS_EXPR}
+  ctor args:      ${CTOR_ARGS_EXPR:-<none>}
+  prereq expr:    ${PREREQ_EXPR:-<none>}
+  init expr:      ${INIT_EXPR:-<none>}
+------------------------------------------------------------
+INFO
+
+if [ -n "${EXTERNALS}" ]; then
+  echo "External import prefixes seen (must be covered by foundry.toml remappings):"
+  # shellcheck disable=SC2001
+  echo "${EXTERNALS}" | sed 's/^EXTERNAL /  - /'
+  echo ""
+fi
+
+STEP="adopter-generate-test"
+# Solidity generator: build the test contract body from the env-var
+# expressions. Empty expressions expand to `{}` blocks so the compiler
+# does not emit spurious "unused override" warnings.
+if [ -z "${CTOR_ARGS_EXPR}" ]; then
+  CTOR_RETURN="return \"\";"
+else
+  CTOR_RETURN="return abi.encode(${CTOR_ARGS_EXPR});"
+fi
+
+# printf -v so multi-line env-var content survives the heredoc without
+# further quoting gymnastics.
+GEN_FILE="${ADOPTER_TEST_DIR}/CaliperRun.t.sol"
+{
+  cat <<SOL
+// SPDX-License-Identifier: Apache-2.0
+pragma solidity 0.8.26;
+
+// AUTO-GENERATED by ./caliper run <hook-path>. Overwritten on each run.
+// For a hand-written adoption, see test/bring-your-hook/ExampleAdopter.t.sol
+// and the walkthrough at test/bring-your-hook/README.md.
+import {Hooks} from "v4-core/src/libraries/Hooks.sol";
+import {BYOHInvariantBase} from "../BYOHInvariantBase.sol";
+import {${HOOK_CONTRACT}} from "../../../${ADOPTER_SRC_DIR}/${HOOK_REL}";
+SOL
+  if [ -n "${EXTRA_IMPORTS}" ]; then
+    printf '%s\n' "${EXTRA_IMPORTS}"
+  fi
+  cat <<SOL
+
+contract CaliperRunTest is BYOHInvariantBase {
+    // Adopter-declared state slots (populated by _deployPrereqs, read by
+    // _hookConstructorArgs / _afterSetUp). Empty when no prereqs needed.
+    ${STATE_DECLS}
+
+    function _hookArtifact() internal pure override returns (string memory) {
+        return "${ADOPTER_SRC_DIR}/${HOOK_REL}:${HOOK_CONTRACT}";
+    }
+
+    function _hookFlags() internal pure override returns (uint160) {
+        return uint160(${FLAGS_EXPR});
+    }
+
+    function _deployPrereqs() internal override {
+        ${PREREQ_EXPR}
+    }
+
+    function _hookConstructorArgs() internal override returns (bytes memory) {
+        ${CTOR_RETURN}
+    }
+
+    function _afterSetUp() internal override {
+        ${INIT_EXPR}
+    }
+}
+SOL
+} > "${GEN_FILE}"
+
+STEP="adopter-clean-leg"
+echo "caliper: running settlement-liveness leg on your hook..."
+./ci/clean_leg.sh "${GEN_FILE}"
+
+STEP="planted-matrix-demo"
+echo ""
+echo "caliper: running the harness's planted-case matrix (marker-mechanism demo)..."
+./ci/planted_leg.sh test/
+
+echo ""
+echo "caliper: adopter run OK. Your hook survived the settlement-liveness walk;"
+echo "the planted-case matrix demonstrated the marker mechanism on the shipped twins."
+echo ""
+echo "Next: declare your hook's business-logic properties by hand-writing a"
+echo "BYOH suite. Walkthrough: test/bring-your-hook/README.md (power-user path)."
