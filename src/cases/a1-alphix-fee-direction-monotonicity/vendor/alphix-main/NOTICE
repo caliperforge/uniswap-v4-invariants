@@ -1,0 +1,28 @@
+Vendored from `github.com/alphixfi/alphix-core` at branch `main`
+(commit fetched via `gh api repos/alphixfi/alphix-core/contents/...` on
+2026-07-15). Upstream license: BUSL-1.1. Vendored under the same license
+as upstream — see the SPDX headers inside each file.
+
+Files:
+- `DynamicFee.sol` — Alphix's `DynamicFeeLib` pure library, byte-copied
+  from `src/libraries/DynamicFee.sol` on `main`. This is the audited
+  reference the clean twin subclasses (in Solidity: imports and calls
+  directly, since it is a pure library). NO byte of this file's
+  fee-computation is altered.
+- `AlphixGlobalConstants.sol` — Alphix's constants library, byte-copied
+  from `src/libraries/AlphixGlobalConstants.sol` on `main`. Vendored as-is
+  so `DynamicFeeLib`'s `AlphixGlobalConstants.ONE_WAD` reference resolves
+  without pulling the rest of the Alphix repo.
+
+Patch policy (both files):
+- SPDX / pragma unchanged.
+- Import paths unchanged: `AlphixGlobalConstants` still resolves via
+  sibling `./AlphixGlobalConstants.sol`; `FullMath` still imports from
+  `v4-core/src/libraries/FullMath.sol` (already pinned in this repo).
+- No fee-arithmetic, no constant, no bound altered.
+
+The planted twin lives in `../planted/` and byte-copies `DynamicFee.sol`
+in this dir into its own file with a single-hunk diff (removes the
+`isUpper` guard in `_applyFeeAdjustment`). The vendored copy in this dir
+is NEVER mutated (repo rule: planted bugs live only in our own case
+code, never in vendored source).
