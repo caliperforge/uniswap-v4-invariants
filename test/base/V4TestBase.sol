@@ -26,16 +26,56 @@ abstract contract V4TestBase is Test {
     InvariantRouter internal router;
     TestERC20 internal token0;
     TestERC20 internal token1;
+    /// True when the pool is (native ETH, ERC20); set from `_useNativePair()`
+    /// at `deployV4Core()` time. In native mode token0 is the address(0)
+    /// sentinel and never touched; only token1 (the ERC20 quote token) is
+    /// deployed and minted. All existing case suites default to false and
+    /// keep the two-ERC20 shape unchanged.
+    bool internal isNativePair;
+
+    /// Adopter opt-in for a native/ERC20 pool. Default false preserves the
+    /// two-ERC20 shape every existing case suite relies on. BYOH adopters
+    /// whose hook gates on `currency0 == address(0)` (a common shape for
+    /// protocol-fee-on-ETH hooks) flip this true.
+    function _useNativePair() internal view virtual returns (bool) {
+        return false;
+    }
+
+    /// Quote token factory used only in native-pair mode. Default returns a
+    /// plain `TestERC20`. Adopters whose hook interrogates the token
+    /// (e.g. `isStarted()`, `start(...)`) override to return a subclass
+    /// that satisfies that surface without breaking the ERC20 shape the
+    /// router uses for `transferFrom` settlement.
+    function _deployQuoteToken() internal virtual returns (TestERC20) {
+        return new TestERC20("Quote", "Q", 18);
+    }
+
+    /// Native mode needs the test contract to hold ETH (for seed liquidity)
+    /// and to receive `take` payouts on sell-side swaps.
+    receive() external payable {}
 
     function deployV4Core() internal {
         manager = new PoolManager(address(this));
         router = newRouterActor(address(this));
 
-        TestERC20 a = new TestERC20("TokenA", "A", 18);
-        TestERC20 b = new TestERC20("TokenB", "B", 18);
-        (token0, token1) = address(a) < address(b) ? (a, b) : (b, a);
-        token0.mint(address(this), 1_000_000e18);
-        token1.mint(address(this), 1_000_000e18);
+        isNativePair = _useNativePair();
+        if (isNativePair) {
+            // token0 stays TestERC20(address(0)) — the sentinel the router
+            // and pool key resolve as native ETH.
+            token1 = _deployQuoteToken();
+            token1.mint(address(this), 1_000_000e18);
+            vm.deal(address(this), 1_000_000e18);
+            vm.deal(address(router), 1_000_000e18);
+            // token1 wasn't approved during router construction (token1 was
+            // still address(0) then); approve now.
+            token1.approve(address(router), type(uint256).max);
+        } else {
+            TestERC20 a = new TestERC20("TokenA", "A", 18);
+            TestERC20 b = new TestERC20("TokenB", "B", 18);
+            (token0, token1) = address(a) < address(b) ? (a, b) : (b, a);
+            token0.mint(address(this), 1_000_000e18);
+            token1.mint(address(this), 1_000_000e18);
+        }
     }
 
     /// One router per fuzz actor: on the real surface each "router
@@ -44,11 +84,16 @@ abstract contract V4TestBase is Test {
     /// address. `payer` funds are approved to the new router.
     function newRouterActor(address payer) internal returns (InvariantRouter r) {
         r = new InvariantRouter(IPoolManager(address(manager)));
+        vm.startPrank(payer);
         if (address(token0) != address(0)) {
-            vm.startPrank(payer);
             token0.approve(address(r), type(uint256).max);
+        }
+        if (address(token1) != address(0)) {
             token1.approve(address(r), type(uint256).max);
-            vm.stopPrank();
+        }
+        vm.stopPrank();
+        if (isNativePair) {
+            vm.deal(address(r), 1_000_000e18);
         }
     }
 
@@ -66,15 +111,18 @@ abstract contract V4TestBase is Test {
     /// Pool at 1:1 with symmetric concentrated liquidity around tick 0,
     /// added through OUR router (never v4-core's UNLICENSED ones).
     function initPoolWithLiquidity(IHooks hooks, uint24 fee, int24 tickSpacing) internal returns (PoolKey memory key) {
+        Currency c0 = isNativePair ? Currency.wrap(address(0)) : Currency.wrap(address(token0));
         key = PoolKey({
-            currency0: Currency.wrap(address(token0)),
+            currency0: c0,
             currency1: Currency.wrap(address(token1)),
             fee: fee,
             tickSpacing: tickSpacing,
             hooks: hooks
         });
         manager.initialize(key, SQRT_PRICE_1_1);
-        token0.approve(address(router), type(uint256).max);
+        if (!isNativePair) {
+            token0.approve(address(router), type(uint256).max);
+        }
         token1.approve(address(router), type(uint256).max);
         router.modifyLiquidity(
             key,

@@ -180,6 +180,48 @@ All optional overrides on `BYOHInvariantBase`, with working defaults:
 (1e17, sized so the fuzz walk never exits the seeded liquidity range),
 `_maxLiquidityPerAdd()` (100e18).
 
+### Pool shape: native/ERC20 vs the default two-ERC20
+
+The default pool is `(TokenA, TokenB)` — two plain `TestERC20`s. Hooks
+that gate their real logic on the pool containing native ETH
+(`Currency.wrap(address(0))`) — a common shape for protocol-fee-on-ETH
+patterns — never reach that logic on the default pool and would pass
+the settlement-liveness walk vacuously. Override two virtuals on
+`BYOHInvariantBase` to opt into a `(native, ERC20)` pool:
+
+```solidity
+function _useNativePair() internal view override returns (bool) {
+    return true;
+}
+
+/// Only override when your hook interrogates the token (isStarted(),
+/// start(), ...). Return a TestERC20 subclass that satisfies your
+/// hook's expected token surface without breaking the ERC20 shape
+/// the router uses for settlement.
+function _deployQuoteToken() internal override returns (TestERC20) {
+    return new MyStartableTestERC20();
+}
+```
+
+In native-pair mode the harness deploys only the quote token, seeds
+the pool with liquidity across `(address(0), quote)`, funds each fuzz
+router with ETH via `vm.deal`, and settles native-side deltas via
+`PoolManager.settle{value: ...}()` from the router's balance. Nothing
+else in the adopter surface changes; the walk, observables, and
+ledger callbacks are shape-agnostic.
+
+### Non-vacuous properties (reachability discipline)
+
+Settlement liveness alone is a reachability-blind check: it passes
+even when the fuzz walk never exercises the code paths your hook's
+gate protects. If your hook has a tracked-pool gate (a `if
+(_isTrackedPool(key))` short-circuit at the top of `_beforeSwap` /
+`_afterSwap`), pair a hook-side counter that only advances inside
+that gate with a ledger-side counter that increments on every
+`onSwap`. When the two diverge the walk fails with your marker; when
+they agree over the full walk the pass is genuinely non-vacuous
+(every fuzzed action took the tracked-pool branch you care about).
+
 ## Troubleshooting
 
 - `HookAddressNotValid` or a constructor revert in `setUp`:

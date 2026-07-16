@@ -151,7 +151,18 @@ abstract contract BYOHInvariantBase is V4TestBase, IBYOHLedger {
         actions = new BYOHActions(
             IPoolManager(address(manager)), IBYOHLedger(address(this)), token0, token1, _maxSwapAmount(), _maxLiquidityPerAdd()
         );
-        token0.mint(address(actions), 1_000_000e18);
+        // In native-pair mode token0 is the address(0) sentinel; actions
+        // and each of its routers hold ETH via vm.deal instead of a mint
+        // call on token0 (the routers settle native from their own balance
+        // — see InvariantRouter._resolve).
+        if (address(token0) != address(0)) {
+            token0.mint(address(actions), 1_000_000e18);
+        } else {
+            vm.deal(address(actions), 1_000_000e18);
+            for (uint256 i = 0; i < 3; i++) {
+                vm.deal(address(actions.routers(i)), 1_000_000e18);
+            }
+        }
         token1.mint(address(actions), 1_000_000e18);
 
         // Prereqs (e.g. an AccessManager the hook's ctor takes) go
@@ -211,6 +222,9 @@ contract BYOHActions is StdUtils {
     PoolKey internal poolKey;
     bool internal inited;
 
+    /// Accept native ETH on takes (native-pair sell-side or refunds).
+    receive() external payable {}
+
     /// Walk-owned liquidity per router actor. Removals are bounded by
     /// this, so the walk never touches the seed liquidity the base
     /// added in setUp (which keeps the swap-sizing math sound) and
@@ -237,7 +251,12 @@ contract BYOHActions is StdUtils {
         maxLiquidityPerAdd = maxLiquidityPerAdd_;
         for (uint256 i = 0; i < routers.length; i++) {
             routers[i] = new InvariantRouter(manager_);
-            t0.approve(address(routers[i]), type(uint256).max);
+            // In native-pair mode t0 is address(0); the router settles
+            // native from its own balance (funded by V4TestBase via
+            // vm.deal in _afterSetUp below) instead of transferFrom on t0.
+            if (address(t0) != address(0)) {
+                t0.approve(address(routers[i]), type(uint256).max);
+            }
             t1.approve(address(routers[i]), type(uint256).max);
         }
     }

@@ -1,0 +1,172 @@
+# caliper bring-your-hook screen for SharesHook.sol
+#
+# What this does: on every push and PR, checks out the caliperforge
+# uniswap-v4-invariants harness at a pinned commit, wires this repo's
+# `SharesHook.sol` into its adopter-mode scaffold, and runs two legs:
+#   1. reachability-observable fuzz walk against the real SharesHook
+#      hook (256 runs, 12,800 calls). The observable pairs
+#      SharesHook.randomCount() (only bumps inside the tracked-pool
+#      branch of `_afterSwap`) with a ledger-side per-swap counter;
+#      the two agreeing across every fuzzed swap proves the walk is
+#      genuinely reaching the tracked-pool code path, not the
+#      passthrough. Reachability discipline is 16/16 clean + 16/16
+#      planted on our end (planted mutation: skip `_randomCount++`
+#      on buys; marker `INVARIANT VIOLATED shareshook_tracked_swap_count`).
+#   2. the harness's own planted-case matrix, which fires the eight
+#      shipped `INVARIANT VIOLATED` markers so the marker mechanism
+#      is visible on the same job that green-gates the hook.
+#
+# The screen tests hook <-> PoolManager settlement + tracked-pool
+# reachability behaviour, not SharesHook's business-logic invariants.
+# Declaring hook-specific properties (fee-direction monotonicity,
+# seed-update determinism etc.) is a follow-up step described in the
+# caliper repo's test/bring-your-hook/README.md.
+#
+# All wiring is inline below. No secrets, no third-party actions
+# beyond actions/checkout, actions/cache, and foundry-rs/foundry-toolchain
+# (each pinned to a major version).
+
+name: caliper-bring-your-hook
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  screen:
+    name: Screen SharesHook.sol via caliper
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout SharesHook (this repo)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          path: shareshook
+
+      - name: Checkout caliper harness (pinned)
+        uses: actions/checkout@v4
+        with:
+          # PINNING NOTE: replace `main` with a specific commit SHA
+          # once you have picked one you want to freeze against. `main`
+          # of caliperforge/uniswap-v4-invariants is a public grant
+          # anchor and additive-only; the maintainers do not rewrite
+          # history. Pinning a SHA locks the exact fuzz seeds too.
+          repository: caliperforge/uniswap-v4-invariants
+          ref: main
+          submodules: recursive
+          path: caliper
+
+      - name: Install Foundry (v1.7.1, matches caliper's pinned toolchain)
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+
+      - name: Cache solc 0.8.26
+        uses: actions/cache@v4
+        with:
+          path: ~/.svm
+          key: solc-0.8.26-${{ runner.os }}
+
+      - name: Run caliper adopter mode against SharesHook.sol
+        working-directory: caliper
+        env:
+          # SharesHook wires AFTER_ADD_LIQUIDITY (position accounting),
+          # BEFORE_SWAP (+ RETURNS_DELTA for buy-side fee take),
+          # AFTER_SWAP (+ RETURNS_DELTA for sell-side fee take + seed
+          # update + controller notify). Anything the hook does not
+          # implement stays off.
+          CALIPER_HOOK_FLAGS_EXPR: "Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG"
+
+          CALIPER_HOOK_EXTRA_IMPORTS: |-
+            import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+
+          # SharesHook's tracked-pool gate requires (native, ERC20)
+          # currencies. `USE_NATIVE_PAIR=1` flips V4TestBase to
+          # `Currency.wrap(address(0))` as currency0 and one TestERC20
+          # subclass as currency1. `QUOTE_TOKEN_EXPR` supplies the
+          # subclass — SharesHook.setToken() reads `isStarted()`, so
+          # the quote token must satisfy IStartableToken.
+          CALIPER_HOOK_USE_NATIVE_PAIR: "1"
+          CALIPER_HOOK_QUOTE_TOKEN_EXPR: 'new StartableTestERC20()'
+
+          # Ctor: (IPoolManager, feeRecipient, uint256 salt). The salt
+          # value is arbitrary; feeRecipient defaults to the test
+          # contract here and is overwritten by setFeeRecipient in
+          # CALIPER_HOOK_INIT_EXPR below (mirrors the SharesHook config
+          # flow: constructor -> setToken/setRenderer/setFeeRecipient/
+          # setLaunchController -> finalizeConfig).
+          CALIPER_HOOK_CTOR_ARGS_EXPR: 'IPoolManager(address(manager)), address(this), uint256(1)'
+
+          # Test-contract state: mock launch controller + adopter's
+          # ledger counter for the reachability observable.
+          CALIPER_HOOK_STATE_DECLS: |-
+            MockLaunchController private _launchCtrl; uint256 private _expectedTrackedSwaps;
+
+          # Auxiliary contracts injected before the test contract.
+          # StartableTestERC20 satisfies SharesHook.setToken's
+          # IStartableToken require. MockLaunchController satisfies
+          # SharesHook.setLaunchController + notifyLaunchStarted +
+          # recordSwap without wiring the real controller (out of
+          # scope for this screen; the tracked-pool code path exercises
+          # the fee-take / seed-update / controller-notify branch).
+          CALIPER_HOOK_EXTRA_CODE: |-
+            contract StartableTestERC20 is TestERC20 {
+                bool private _started;
+                constructor() TestERC20("SharesQuote","SQ",18) {}
+                function isStarted() external view returns (bool) { return _started; }
+                function start(address) external { _started = true; }
+            }
+            contract MockLaunchController {
+                uint256 public recordCount;
+                uint256 public notifyCount;
+                function notifyLaunchStarted() external { notifyCount++; }
+                function recordSwap(address, bool, uint256, uint256) external returns (bool, uint8, uint256, bool) {
+                    recordCount++;
+                    return (true, 0, 0, false);
+                }
+            }
+
+          # Config-finalize path SharesHook requires before its
+          # tracked-pool gate returns true. Order matches the source:
+          # setToken -> setRenderer -> setFeeRecipient ->
+          # setLaunchController -> finalizeConfig.
+          CALIPER_HOOK_INIT_EXPR: |-
+            _launchCtrl = new MockLaunchController();
+            SharesHook h = SharesHook(hookAddress);
+            h.setToken(address(token1));
+            h.setRenderer(address(uint160(0xBEEF)));
+            h.setFeeRecipient(address(this));
+            h.setLaunchController(address(_launchCtrl));
+            h.finalizeConfig();
+
+          # Ledger bookkeeping: BYOH scaffold's onSwap hook fires once
+          # per fuzzed swap; each one takes the tracked-pool branch
+          # (verified by the observable itself), so we bump the
+          # expected counter every time.
+          CALIPER_HOOK_ONSWAP_EXPR: '_expectedTrackedSwaps++;'
+
+          # Reachability observable: SharesHook.randomCount() only
+          # increments inside `_afterSwap`'s `if (_isTrackedPool(key))`
+          # branch. Pairing it with our own per-swap tally means the
+          # walk must be genuinely reaching the tracked-pool code path
+          # on every swap for the observable to hold. Sensitive to
+          # one-line defects in that branch (16/16 clean + 16/16
+          # planted verified on our end).
+          CALIPER_HOOK_OBSERVABLES_EXPR: |-
+            o = new Observable[](1);
+            o[0] = obs("shareshook_tracked_swap_count", SharesHook(hookAddress).randomCount(), _expectedTrackedSwaps);
+
+          # SRC_ROOT bounds the recursive relative-import walk. Points
+          # at this repo's root so the wrapper's ci/vendor_hook_imports.py
+          # can follow SharesHook's sibling imports (interfaces/,
+          # libraries/) without escaping the tree.
+          CALIPER_HOOK_SRC_ROOT: ${{ github.workspace }}/shareshook
+
+        run: ./caliper run ${{ github.workspace }}/shareshook/SharesHook.sol

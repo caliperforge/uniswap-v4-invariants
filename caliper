@@ -90,6 +90,32 @@ Environment (adopter-mode overrides; all accept solidity expressions):
                                  directory containing <hook.sol>. Set to the hook repo's
                                  `src/` when the hook imports from sibling directories
                                  above its own folder.
+  CALIPER_HOOK_USE_NATIVE_PAIR   Set to `1` when the hook only activates on a (native ETH,
+                                 ERC20) pool. Emits a `_useNativePair()` override so the
+                                 scaffold builds a native/ERC20 pool (currency0=address(0),
+                                 currency1=ERC20) with router-side ETH funding. Default
+                                 (unset / `0`) keeps the two-ERC20 default shape.
+  CALIPER_HOOK_QUOTE_TOKEN_EXPR  Solidity expression returning a `TestERC20` (or subclass)
+                                 to use as the ERC20 quote token in native-pair mode. E.g.
+                                 `new StartableTestERC20()` for hooks whose token surface
+                                 has extra methods (`isStarted()`, `start(...)`).
+                                 Default: `new TestERC20("Quote","Q",18)`.
+  CALIPER_HOOK_EXTRA_CODE        Extra top-level Solidity code inserted BEFORE the
+                                 CaliperRunTest contract. Use to inline auxiliary contracts
+                                 the adopter needs (mock tokens, mock controllers) without
+                                 vendoring separate files.
+  CALIPER_HOOK_OBSERVABLES_EXPR  Solidity statements for the body of `_observables()`.
+                                 Must declare/return `Observable[] memory o`. Use `obs(name,
+                                 observed, expected)` to construct each entry. When set,
+                                 also imports the `Observable` symbol into the generated
+                                 test. Empty => scaffold's default (settlement-liveness only,
+                                 which is a REACHABILITY-BLIND green for any hook whose
+                                 real logic sits behind a gate the default pool doesn't
+                                 satisfy).
+  CALIPER_HOOK_ONSWAP_EXPR       Solidity statements for the body of the ledger's `onSwap`
+                                 callback: `(address routerActor, bool zeroForOne, uint256
+                                 amountIn, bytes calldata hookData)`. Maintain the
+                                 expected-state ledger the observables read from.
 
 Hooks whose permissions/constructor don't match the wrapper's shape, or whose
 package deps outrun our pinned lib versions: follow the power-user walkthrough
@@ -200,6 +226,11 @@ PREREQ_EXPR="${CALIPER_HOOK_PREREQ_EXPR:-}"
 INIT_EXPR="${CALIPER_HOOK_INIT_EXPR:-}"
 STATE_DECLS="${CALIPER_HOOK_STATE_DECLS:-}"
 EXTRA_IMPORTS="${CALIPER_HOOK_EXTRA_IMPORTS:-}"
+USE_NATIVE_PAIR="${CALIPER_HOOK_USE_NATIVE_PAIR:-0}"
+QUOTE_TOKEN_EXPR="${CALIPER_HOOK_QUOTE_TOKEN_EXPR:-}"
+EXTRA_CODE="${CALIPER_HOOK_EXTRA_CODE:-}"
+OBSERVABLES_EXPR="${CALIPER_HOOK_OBSERVABLES_EXPR:-}"
+ONSWAP_EXPR="${CALIPER_HOOK_ONSWAP_EXPR:-}"
 SRC_ROOT="${CALIPER_HOOK_SRC_ROOT:-$(dirname "${HOOK_ABS}")}"
 # Normalise to absolute, no trailing slash.
 SRC_ROOT="$(cd "${SRC_ROOT}" && pwd)"
@@ -233,6 +264,8 @@ caliper: adopter mode
   ctor args:      ${CTOR_ARGS_EXPR:-<none>}
   prereq expr:    ${PREREQ_EXPR:-<none>}
   init expr:      ${INIT_EXPR:-<none>}
+  native pair:    ${USE_NATIVE_PAIR}
+  quote token:    ${QUOTE_TOKEN_EXPR:-<default TestERC20>}
 ------------------------------------------------------------
 INFO
 
@@ -256,6 +289,45 @@ fi
 # printf -v so multi-line env-var content survives the heredoc without
 # further quoting gymnastics.
 GEN_FILE="${ADOPTER_TEST_DIR}/CaliperRun.t.sol"
+
+# Native-pair mode: emit two extra overrides (bool toggle + quote token
+# factory) and pull TestERC20 into scope so QUOTE_TOKEN_EXPR can `new`
+# a subclass. Both blocks are empty strings when USE_NATIVE_PAIR != 1,
+# preserving the two-ERC20 default.
+NATIVE_PAIR_OVERRIDE=""
+QUOTE_TOKEN_OVERRIDE=""
+NATIVE_PAIR_IMPORT=""
+if [ "${USE_NATIVE_PAIR}" = "1" ]; then
+  NATIVE_PAIR_IMPORT='import {TestERC20} from "../../base/TestERC20.sol";'
+  NATIVE_PAIR_OVERRIDE='function _useNativePair() internal view override returns (bool) { return true; }'
+  if [ -n "${QUOTE_TOKEN_EXPR}" ]; then
+    QUOTE_TOKEN_OVERRIDE="function _deployQuoteToken() internal override returns (TestERC20) { return ${QUOTE_TOKEN_EXPR}; }"
+  fi
+fi
+
+# Reachability-observable overrides. When OBSERVABLES_EXPR is set, the
+# generated test declares `_observables()` and `onSwap` overrides, and
+# pulls the `Observable` type into scope. Without these, the walk only
+# checks settlement liveness -- a reachability-blind check for any hook
+# whose real logic sits behind a gate the default pool doesn't hit.
+OBSERVABLE_IMPORT=""
+OBSERVABLE_OVERRIDE=""
+ONSWAP_OVERRIDE=""
+if [ -n "${OBSERVABLES_EXPR}" ]; then
+  OBSERVABLE_IMPORT='import {Observable} from "../BYOHInvariantBase.sol";'
+  # Solidity requires override(BYOHInvariantBase) is unambiguous; the base
+  # declares _observables and onSwap as virtual returning Observable[]
+  # (empty default) and no-op respectively.
+  OBSERVABLE_OVERRIDE="function _observables() internal view override returns (Observable[] memory o) {
+${OBSERVABLES_EXPR}
+    }"
+  if [ -n "${ONSWAP_EXPR}" ]; then
+    ONSWAP_OVERRIDE="function onSwap(address routerActor, bool zeroForOne, uint256 amountIn, bytes calldata hookData) external override {
+${ONSWAP_EXPR}
+    }"
+  fi
+fi
+
 {
   cat <<SOL
 // SPDX-License-Identifier: Apache-2.0
@@ -268,8 +340,17 @@ import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {BYOHInvariantBase} from "../BYOHInvariantBase.sol";
 import {${HOOK_CONTRACT}} from "../../../${ADOPTER_SRC_DIR}/${HOOK_REL}";
 SOL
+  if [ -n "${NATIVE_PAIR_IMPORT}" ]; then
+    printf '%s\n' "${NATIVE_PAIR_IMPORT}"
+  fi
+  if [ -n "${OBSERVABLE_IMPORT}" ]; then
+    printf '%s\n' "${OBSERVABLE_IMPORT}"
+  fi
   if [ -n "${EXTRA_IMPORTS}" ]; then
     printf '%s\n' "${EXTRA_IMPORTS}"
+  fi
+  if [ -n "${EXTRA_CODE}" ]; then
+    printf '\n%s\n' "${EXTRA_CODE}"
   fi
   cat <<SOL
 
@@ -286,6 +367,10 @@ contract CaliperRunTest is BYOHInvariantBase {
         return uint160(${FLAGS_EXPR});
     }
 
+    ${NATIVE_PAIR_OVERRIDE}
+
+    ${QUOTE_TOKEN_OVERRIDE}
+
     function _deployPrereqs() internal override {
         ${PREREQ_EXPR}
     }
@@ -297,6 +382,10 @@ contract CaliperRunTest is BYOHInvariantBase {
     function _afterSetUp() internal override {
         ${INIT_EXPR}
     }
+
+    ${OBSERVABLE_OVERRIDE}
+
+    ${ONSWAP_OVERRIDE}
 }
 SOL
 } > "${GEN_FILE}"
