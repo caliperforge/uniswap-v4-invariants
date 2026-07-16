@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {StdUtils} from "forge-std/StdUtils.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
@@ -81,7 +82,7 @@ contract FlashHandler is StdUtils {
 
         try r.swap(
             poolKey,
-            IPoolManager.SwapParams({
+            SwapParams({
                 zeroForOne: zeroForOne,
                 // exact-input per v4 convention; amount is bounded to
                 // MAX_SWAP (1e17) so the uint256 -> int256 cast is safe

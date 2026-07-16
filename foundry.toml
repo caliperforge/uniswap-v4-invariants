@@ -23,17 +23,18 @@ remappings = [
     "v4-core/=lib/v4-core/",
     "solmate/=lib/v4-core/lib/solmate/",
     "@openzeppelin/=lib/v4-core/lib/openzeppelin-contracts/",
-    # C-P2 pins the OZ Uniswap Hooks library at tag v1.1.0 so a reviewer
+    # C-P2 pins the OZ Uniswap Hooks library at tag v1.2.1 so a reviewer
     # can diff our clean twin against the audited post-`2678eb9` base
     # library. The clean twin subclasses OZ's actual fixed
     # `BaseDynamicAfterFee`, vendored under the case dir at
     # `src/cases/p2-dynamicfee-direction-integrity/vendor/oz-uniswap-hooks-v1.1.0/`
     # (see that dir's NOTICE for the patch policy: sibling imports
-    # rewritten, `SwapParams` referenced via `IPoolManager.SwapParams`
-    # since our pinned v4-core `v4.0.0` pre-dates the PoolOperation.sol
-    # split; no fee-arithmetic byte altered). The submodule remains
-    # pinned here so a reviewer can byte-compare the vendored file to
-    # the audited source.
+    # rewritten to `./` paths; `SwapParams` / `ModifyLiquidityParams`
+    # imported from `v4-core/src/types/PoolOperation.sol` as upstream
+    # v1.1.0 does, resolved via the v4-core pin at `^1.0.2` which
+    # carries `PoolOperation.sol`; no fee-arithmetic byte altered).
+    # The submodule remains pinned here so a reviewer can byte-compare
+    # the vendored file to the audited source.
     "openzeppelin-uniswap-hooks/=lib/openzeppelin-uniswap-hooks/",
     # The vendored `BaseDynamicAfterFee.sol` and `CurrencySettler.sol`
     # import from `openzeppelin/utils/*` and `openzeppelin/token/ERC20/*`

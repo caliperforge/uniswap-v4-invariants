@@ -3,6 +3,7 @@ pragma solidity 0.8.26;
 
 import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
@@ -106,7 +107,7 @@ abstract contract FlashCase is V4TestBase {
 
         try router.swap(
             key,
-            IPoolManager.SwapParams({
+            SwapParams({
                 zeroForOne: true,
                 amountSpecified: -1e18,
                 sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
@@ -152,7 +153,7 @@ abstract contract FlashCase is V4TestBase {
         hook.beforeSwap(
             address(this),
             key,
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -1, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
+            SwapParams({zeroForOne: true, amountSpecified: -1, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1}),
             abi.encodePacked(BONUS_BYTE)
         );
     }
