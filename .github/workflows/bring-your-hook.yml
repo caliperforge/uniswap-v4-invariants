@@ -41,11 +41,13 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: v1.7.1
-      - name: Cache solc 0.8.26
+      - name: Cache solc 0.8.33
         uses: actions/cache@v4
         with:
           path: ~/.svm
-          key: solc-0.8.26-${{ runner.os }}
+          key: solc-0.8.33-${{ runner.os }}
+      - name: Relax v4-core PoolManager pragma (substrate-modern)
+        run: ./ci/apply_v4core_pragma_relax.sh
       - name: Build
         run: forge build
       - name: Your hook passes, zero markers
@@ -60,11 +62,13 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: v1.7.1
-      - name: Cache solc 0.8.26
+      - name: Cache solc 0.8.33
         uses: actions/cache@v4
         with:
           path: ~/.svm
-          key: solc-0.8.26-${{ runner.os }}
+          key: solc-0.8.33-${{ runner.os }}
+      - name: Relax v4-core PoolManager pragma (substrate-modern)
+        run: ./ci/apply_v4core_pragma_relax.sh
       - name: Build
         run: forge build
       - name: Planted suites fail with markers (inverted assertion)

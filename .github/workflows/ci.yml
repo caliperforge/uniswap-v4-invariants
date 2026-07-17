@@ -3,6 +3,14 @@
 # The three green-local/red-CI splits (exact solc 0.8.26, cancun,
 # recursive submodules) are all pinned in-repo; solc is cached so CI
 # cannot drift.
+#
+# substrate-modern reproducibility note: foundry.toml pins
+# `solc_version = "0.8.33"` (documented combo-wall bump). Upstream
+# v4-core v1.0.2 ships `lib/v4-core/src/PoolManager.sol` with an EXACT
+# `pragma solidity 0.8.26;` pin. Every job runs
+# `ci/apply_v4core_pragma_relax.sh` post-checkout / pre-build to relax
+# that single pragma to `^0.8.26`, mirroring the local dev state and
+# closing the works-locally/red-in-CI gap.
 name: ci
 
 on:
@@ -19,11 +27,13 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: v1.7.1
-      - name: Cache solc 0.8.26
+      - name: Cache solc 0.8.33
         uses: actions/cache@v4
         with:
           path: ~/.svm
-          key: solc-0.8.26-${{ runner.os }}
+          key: solc-0.8.33-${{ runner.os }}
+      - name: Relax v4-core PoolManager pragma (substrate-modern)
+        run: ./ci/apply_v4core_pragma_relax.sh
       - name: Build
         run: forge build
       - name: Clean twins pass, zero markers
@@ -38,11 +48,13 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: v1.7.1
-      - name: Cache solc 0.8.26
+      - name: Cache solc 0.8.33
         uses: actions/cache@v4
         with:
           path: ~/.svm
-          key: solc-0.8.26-${{ runner.os }}
+          key: solc-0.8.33-${{ runner.os }}
+      - name: Relax v4-core PoolManager pragma (substrate-modern)
+        run: ./ci/apply_v4core_pragma_relax.sh
       - name: Build
         run: forge build
       - name: Planted twins fail with markers (inverted assertion)
@@ -62,11 +74,13 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: v1.7.1
-      - name: Cache solc 0.8.26
+      - name: Cache solc 0.8.33
         uses: actions/cache@v4
         with:
           path: ~/.svm
-          key: solc-0.8.26-${{ runner.os }}
+          key: solc-0.8.33-${{ runner.os }}
+      - name: Relax v4-core PoolManager pragma (substrate-modern)
+        run: ./ci/apply_v4core_pragma_relax.sh
       - name: Build
         run: forge build
       - name: Reachability certified across 16 seeds
