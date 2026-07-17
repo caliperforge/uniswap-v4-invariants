@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity 0.8.26;
+pragma solidity ^0.8.26;
 
 import {ExampleAdopterTest} from "./ExampleAdopter.t.sol";
 // WHY this import exists although the twin is only named by artifact

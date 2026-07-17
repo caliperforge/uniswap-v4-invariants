@@ -7,3 +7,6 @@
 [submodule "lib/openzeppelin-uniswap-hooks"]
 	path = lib/openzeppelin-uniswap-hooks
 	url = https://github.com/OpenZeppelin/uniswap-hooks.git
+[submodule "lib/v4-hooks-public"]
+	path = lib/v4-hooks-public
+	url = https://github.com/Uniswap/v4-hooks-public.git
