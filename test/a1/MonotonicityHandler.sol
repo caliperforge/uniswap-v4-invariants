@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity 0.8.26;
+pragma solidity ^0.8.26;
 
 /// C-A1 fuzz handler. Fires `poke(currentRatio)` on the harness contract
 /// (clean or planted) with the ratio bounded into a range that includes

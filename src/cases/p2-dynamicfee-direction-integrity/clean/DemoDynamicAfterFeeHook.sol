@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity 0.8.26;
+pragma solidity ^0.8.26;
 
 import {BaseDynamicAfterFee} from "../vendor/oz-uniswap-hooks-v1.1.0/BaseDynamicAfterFee.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
