@@ -60,6 +60,32 @@ jobs:
       - name: Planted twins fail with markers (inverted assertion)
         run: ./ci/planted_leg.sh
 
+  adopter-generator-leg:
+    # T-P034-S1: run `./caliper run <path>` against the checked-in
+    # third-party-shaped fixture (ci/fixtures/third-party-hook/), so
+    # the generator code path -- the one-command adopter entry point --
+    # is exercised on every push. The other jobs never invoke the
+    # generator, which is how the line-334 pragma defect shipped
+    # invisibly (T-P034-A section 4.1). Hermetic: no network fetch of
+    # any third-party source at job time.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - name: Cache solc 0.8.33
+        uses: actions/cache@v4
+        with:
+          path: ~/.svm
+          key: solc-0.8.33-${{ runner.os }}
+      - name: Relax v4-core PoolManager pragma (substrate-modern)
+        run: ./ci/apply_v4core_pragma_relax.sh
+      - name: Generator produces a compiling, walking adopter run
+        run: ./ci/adopter_generator_leg.sh
+
   reachability-multi-seed:
     # Merge gate: N=16 distinct fuzz seeds must all fail every real
     # planted-twin suite (bring-your-hook walkthrough excluded).

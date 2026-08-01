@@ -46,7 +46,17 @@ remappings = [
     # compiler bump; no fork/patch needed here (in contrast to the
     # single pragma relax on `lib/v4-core/src/PoolManager.sol`).
     "@uniswap/v4-hooks-public/=lib/v4-hooks-public/",
-    "@uniswap/v4-periphery/=lib/v4-hooks-public/lib/v4-periphery/",
+    # W2 (T-P034-S1): the v4-hooks-public-nested v4-periphery checkout
+    # carries no `src/utils/BaseHook.sol`, so every third-party hook
+    # importing `@uniswap/v4-periphery/src/utils/BaseHook.sol` (the
+    # dominant convention on the live hook population, 5 of 10 in the
+    # T-P034-A sample) failed to compile. The OZ-uniswap-hooks-nested
+    # v4-periphery checkout does carry it. Redirect the prefix there.
+    # Note this changes which v4-periphery the harness's own files see
+    # (MoonpotHook and lib/v4-hooks-public's BaseHook lineage resolve
+    # through this prefix); the full clean+planted suite was re-run
+    # green after this change (T-P034-S1 result, section 2).
+    "@uniswap/v4-periphery/=lib/openzeppelin-uniswap-hooks/lib/v4-periphery/",
     "@uniswap/permit2/=lib/v4-hooks-public/lib/v4-periphery/lib/permit2/",
     "permit2/=lib/v4-hooks-public/lib/v4-periphery/lib/permit2/",
     "solmate/=lib/v4-core/lib/solmate/",
